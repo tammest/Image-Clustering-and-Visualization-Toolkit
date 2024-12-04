@@ -4,19 +4,19 @@
 
 ![#f03c15](https://www.iconsdb.com/icons/download/color/f03c15/circle-16.png) `Overview`
 
-<ul>
+<ol>
   <li>Conversion from TIFF to Zarr Format:</li>
-    <ul>
+    <ol>
         <li>Indented item</li>
       
   <li>Second item</li>
   <li>Third item
-    <ul>
+    <ol>
       <li>Indented item</li>
       <li>Indented item</li>
-    </ul>
+    </ol>
   </li>
   <li>Fourth item</li>
-</ul>
+</ol>
 
 
