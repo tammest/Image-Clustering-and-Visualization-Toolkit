@@ -6,11 +6,11 @@
 
 <ul>
   <li>Conversion from TIFF to Zarr Format:</li>
-    <ul>
-        <li>Indented item</li>
+<ul>
+  <li>Indented item</li>
  <ul>
    <li>Second item</li>
-  <li>Third item
+   <li>Third item
     <ul>
       <li>Indented item</li>
       <li>Indented item</li>
