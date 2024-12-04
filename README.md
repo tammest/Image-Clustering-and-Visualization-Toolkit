@@ -107,9 +107,7 @@ This repository provides a set of Python scripts for processing multi-channel im
 ---
 
 ### Additional Enhancements:
-- **Icons/Images**: You could include icons or flow diagrams to visually explain the workflow (e.g., for the process of converting TIFF to Zarr or clustering).
-- **Tables**: For displaying sample input/output or configuration details, using tables can make the information clearer.
-- **Links to Documentation**: Add hyperlinks to the respective libraries or related resources. For example:
+- **Links to Documentation**: Respective libraries or related resources:
   - [tifffile documentation](https://pypi.org/project/tifffile/)
   - [Zarr Python documentation](https://zarr.readthedocs.io/en/stable/)
   - [scikit-learn clustering documentation](https://scikit-learn.org/stable/modules/clustering.html)
