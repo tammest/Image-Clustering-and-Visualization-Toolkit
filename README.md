@@ -7,6 +7,8 @@ This repository provides a set of Python scripts for processing multi-channel im
 - **Tile generation** from large slides
 - **Clustering and PCA analysis**
 - **Visualization** of clustering results and feature analysis
+- **Analysis** of tissue layers and its respective super clusters
+  
 
 ---
 
@@ -83,6 +85,16 @@ This repository provides a set of Python scripts for processing multi-channel im
 ## Cluster Visualization
 
 - **Increase brightness of autofluorescence channel**
+  - Enhance brightness by **scaling pixel values**
+
+- **Plot tile positions on the image**
+  - Scale tile positions to match image dimensions
+  - Visualize tile positions with cluster colors
+
+---
+## Supercluster Visualization 
+
+- **Determine Tissue Layers**
   - Enhance brightness by **scaling pixel values**
 
 - **Plot tile positions on the image**
