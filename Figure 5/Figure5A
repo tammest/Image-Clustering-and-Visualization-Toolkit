@@ -1,0 +1,195 @@
+import os
+import pandas as pd
+import numpy as np
+import zarr
+import matplotlib.pyplot as plt
+
+# =========================
+# Config
+# =========================
+csv_path = "features_with_clusters.csv"
+df = pd.read_csv(csv_path)
+
+zarr_path = "/gpfs/scratch/tm3475/testforpython/20230721_dbdb Untr POD5 39R2_dbdb POD5 9_Scan4_Stitched.ome/data.zarr"
+arr_data = zarr.open(zarr_path, mode="r")
+
+# Colors per channel (0-based indices)
+# 0:DAPI, 1:aSMA, 2:VIM, 3:F4/80, 4:CD31, 5:KI-67, 6:AF
+CHANNEL_COLORS = [
+    [0, 0, 0],  # DAPI (blue)
+    [0, 0, 0],  # aSMA (cyan)
+    [0, 0, 0],  # VIM (magenta)
+    [0, 0, 0],  # F4/80 (green)
+    [0, 0, 0],  # CD31 (red)
+    [0, 0, 0],  # KI-67 (yellow)
+    [1, 1, 1],  # AF (white)
+]
+
+# Optional per-channel gain to balance dominance (1.0 = unchanged)
+PER_CHANNEL_GAIN = {
+    0: 1.0,  # DAPI
+    1: 1.0,  # aSMA
+    2: 1.0,  # VIM
+    3: 1.0,  # F4/80
+    4: 1.0,  # CD31
+    5: 1.2,  # KI-67 (boost slightly so it's visible if present)
+    6: 0.6,  # AF (tone down so it doesn't overpower)
+}
+
+# ---- Switch: gates vs no gates ----
+USE_GATES = False     # set True to re-enable gating
+DEFAULT_PERCENTILE = 90.0
+DEFAULT_MIN_DENSITY = 2.0
+DEFAULT_MIN_ABS_PIXELS = 0
+PER_CHANNEL_PERCENTILE = {}
+PER_CHANNEL_MIN_DENSITY = {}
+PER_CHANNEL_MIN_ABS_PIXELS = {}
+
+# Intensity clipping percentile before normalization
+CLIP_HIGH_PERCENTILE = 99.0
+
+# =========================
+# Helpers
+# =========================
+def _normalize_clip(arr: np.ndarray, clip_hi_pct: float) -> np.ndarray:
+    """Clip high tail and scale to [0,1]. Uses positive pixels for stats when available."""
+    if arr.size == 0:
+        return arr
+    pos = arr[arr > 0]
+    if pos.size == 0:
+        return np.zeros_like(arr)
+    clip_hi = np.percentile(pos, clip_hi_pct)
+    if clip_hi <= 0:
+        clip_hi = pos.max()
+    norm = np.clip(arr, 0, clip_hi)
+    vmin, vmax = norm.min(), norm.max()
+    if vmax > vmin:
+        norm = (norm - vmin) / (vmax - vmin)
+    else:
+        norm = np.zeros_like(norm)
+    return norm
+
+# =========================
+# Main
+# =========================
+def get_tile_from_csv(
+    df,
+    zarr_data,
+    h=None,
+    w=None,
+    img_size=128,
+    save_path=None,
+):
+    # Rows to process
+    if h is not None and w is not None:
+        rows = [{'h': h, 'w': w, 'tile_index': 'manual', 'sample_name': 'manual', 'cluster_label': 'manual'}]
+    else:
+        rows = df.to_dict(orient='records')
+
+    num_channels, num_height, num_width = zarr_data.shape
+    print(f"Zarr data shape: {zarr_data.shape}")
+
+    max_channels_to_use = min(7, num_channels)
+
+    for row in rows:
+        h = int(row['h'])
+        w = int(row['w'])
+
+        # Bounds
+        y_end = min(h + img_size, num_height)
+        x_end = min(w + img_size, num_width)
+        if y_end <= h or x_end <= w:
+            print(f"Warning: Invalid region for tile at h={h}, w={w}. Skipping.")
+            continue
+
+        # Extract channels
+        channels = [zarr_data[i][h:y_end, w:x_end] for i in range(max_channels_to_use)]
+        H, W = channels[0].shape
+        composite_image = np.zeros((H, W, 3), dtype=float)
+
+        passed = []
+
+        if not USE_GATES:
+            # --- No gating path: plot everything ---
+            for i, ch in enumerate(channels):
+                nz = int(np.count_nonzero(ch))
+                ch_max = float(ch.max()) if ch.size else 0.0
+                print(f"Processing Channel {i+1} (no gates): nonzero={nz}, max={ch_max:.4g}")
+
+                # Just normalize clipped channel (no threshold)
+                norm = _normalize_clip(ch, CLIP_HIGH_PERCENTILE)
+
+                # Apply per-channel gain
+                gain = PER_CHANNEL_GAIN.get(i, 1.0)
+                norm = np.clip(norm * gain, 0, 1)
+
+                # Color and add
+                color = CHANNEL_COLORS[i]
+                color_img = np.zeros((H, W, 3), dtype=float)
+                color_img[:, :, 0] = norm * color[0]
+                color_img[:, :, 1] = norm * color[1]
+                color_img[:, :, 2] = norm * color[2]
+                composite_image += color_img
+                passed.append(f"Channel {i+1}")
+        else:
+            # --- Original gating path (kept here in case you want to toggle back) ---
+            for i, ch in enumerate(channels):
+                print(f"Processing Channel {i+1} with shape {ch.shape}")
+                if ch.size == 0:
+                    continue
+                p = PER_CHANNEL_PERCENTILE.get(i, DEFAULT_PERCENTILE)
+                # percentile over non-zero pixels for robustness
+                vals = ch[ch > 0]
+                if vals.size == 0:
+                    print(f"Channel {i+1}: all zeros in window.")
+                    continue
+                thr_val = np.percentile(vals, p)
+                thr = np.where(ch > thr_val, ch, 0)
+                non_zero = int(np.count_nonzero(thr))
+                dens = (non_zero / thr.size) * 100.0
+                min_d = PER_CHANNEL_MIN_DENSITY.get(i, DEFAULT_MIN_DENSITY)
+                min_abs = PER_CHANNEL_MIN_ABS_PIXELS.get(i, DEFAULT_MIN_ABS_PIXELS)
+                if (dens < min_d) and (non_zero < min_abs):
+                    print(f"Channel {i+1} failed gates: {dens:.3f}% < {min_d:.3f}% AND {non_zero} < {min_abs} px")
+                    continue
+                norm = _normalize_clip(thr, CLIP_HIGH_PERCENTILE)
+                gain = PER_CHANNEL_GAIN.get(i, 1.0)
+                norm = np.clip(norm * gain, 0, 1)
+                color = CHANNEL_COLORS[i]
+                color_img = np.zeros((H, W, 3), dtype=float)
+                color_img[:, :, 0] = norm * color[0]
+                color_img[:, :, 1] = norm * color[1]
+                color_img[:, :, 2] = norm * color[2]
+                composite_image += color_img
+                passed.append(f"Channel {i+1}")
+
+        composite_image = np.clip(composite_image, 0, 1)
+        if passed:
+            print(f"Channels included: {', '.join(passed)}")
+        else:
+            print("No channels included (unexpected in no-gates mode).")
+
+        plt.imshow(composite_image)
+        plt.axis('off')
+
+        if save_path:
+            os.makedirs(save_path, exist_ok=True)
+            out_path = os.path.join(save_path, f"composite_h{h}_w{w}_AF.png")
+            plt.savefig(out_path, bbox_inches='tight', pad_inches=0.1, transparent=True)
+            print(f"Image saved to {out_path}")
+        else:
+            plt.show()
+
+# =========================
+# Example: manual h,w
+# =========================
+get_tile_from_csv(
+    df,
+    arr_data,
+    h=4480,
+    w=1792,
+    save_path="/gpfs/scratch/tm3475/testforpython"
+)
+
+
+###4480, 1792 - f480 is missing 
