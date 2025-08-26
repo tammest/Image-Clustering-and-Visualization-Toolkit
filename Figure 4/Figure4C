@@ -1,0 +1,588 @@
+# -*- coding: utf-8 -*-
+"""
+Tile coverage analysis with:
+- STRICT pre-flight mapping enforcement (no Unknown; require 4 cohorts)
+- Robust regex that treats underscores as separators
+- Day5/Day10 + WT/dbdb grouping
+- Per-sample pies
+- Stacked bars using LOG-scaled counts (clean, multi-column legend)
+- Violin plot (shows spread clearly)
+- Chord (circle) plots via pycirclize, with a bin color key under each figure
+
+Requires:
+    pip install pycirclize   # for chord plots
+"""
+
+import os
+import re
+import zarr
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+
+# --- USER SETTINGS ---
+ROOT_PATH = '/gpfs/scratch/tm3475/testforpython'
+TILE_SIZE = 128
+SAMPLE_NAMES = [
+    '20230721_Day 5 dbdb 4_dbdb Day 5 6_Scan6_Stitched.ome',
+    '20230721_Day 5 dbdb 4_dbdb Day 5 6_Scan6_Stitched_B.ome',
+    '20230721_Day 5 WT 3_WT Day 5 4_Scan3_Stitched.ome',
+    '20230721_Day 5 WT 3_WT Day 5 4_Scan3_Stitched_B.ome',
+    '20230721_dbdb POD10 Untr 43 R_dbdb Untr POD10 41L_Scan3_Stitched.ome',
+    '20230721_dbdb POD10 Untr 43 R_dbdb Untr POD10 41L_Scan3_Stitched_B.ome',
+    '20230721_dbdb POD10 Untr B2R_dbdb POD10 Untr B1R_Scan3_Stitched.ome',
+    '20230721_dbdb POD10 Untr B2R_dbdb POD10 Untr B1R_Scan3_Stitched_B.ome',
+    '20230721_dbdb Untr POD5 39R2_dbdb POD5 9_Scan4_Stitched.ome',
+    '20230721_dbdb Untr POD5 39R2_dbdb POD5 9_Scan4_Stitched_B.ome',
+    '20230721_POD 10 WT 1_C57 10d 1_Scan2_Stitched.ome',
+    # '20230721_POD 10 WT 1_C57 10d 1_Scan2_Stitched_B.ome',
+    '20230721_WT POD 5 6_WT POD 5 7_Scan3_Stitched.ome',
+    '20230721_WT POD 5 6_WT POD 5 7_Scan3_Stitched_B.ome',
+    '20230721_WT POD10 47_WT POD 10 48_Scan2_Stitched.ome',
+    '20230721_WT POD10 47_WT POD 10 48_Scan2_Stitched_B.ome'
+]
+
+MIN_PIXEL_INTENSITY = 0  # consider pixel present if > 0
+
+# --- ROBUST LABEL REGEX (underscores treated as separators) ---
+# custom "boundary": not a letter/digit on each side
+DAY5_RE  = re.compile(r'(?<![A-Za-z0-9])(day\s*5|pod\s*5|pod5|5d|day5)(?![A-Za-z0-9])', re.I)
+DAY10_RE = re.compile(r'(?<![A-Za-z0-9])(day\s*10|pod\s*10|pod10|10d|day10)(?![A-Za-z0-9])', re.I)
+GENO_RE  = re.compile(r'(?<![A-Za-z0-9])(wt|dbdb)(?![A-Za-z0-9])', re.I)
+
+def classify_day(name: str) -> str:
+    if DAY5_RE.search(name):  return "Day5"
+    if DAY10_RE.search(name): return "Day10"
+    return "Unknown"
+
+def classify_genotype(name: str) -> str:
+    m = GENO_RE.search(name)
+    if not m: return "Unknown"
+    return "WT" if m.group(1).lower() == "wt" else "dbdb"
+
+# Use these everywhere so there’s one source of truth
+day_group_from_name = classify_day
+extract_genotype    = classify_genotype
+
+# --- STRICT ENFORCEMENT: filename → (Day, Genotype) and cohort presence ---
+STRICT_REQUIRE_ALL_COHORTS = True
+
+# Pre-flight table (from filenames only)
+_pre_rows = []
+for s in SAMPLE_NAMES:
+    d  = classify_day(s)
+    g  = classify_genotype(s)
+    coh = f"{d}·{g}"
+    _pre_rows.append({"sample_name": s, "day_group": d, "genotype": g, "cohort": coh})
+_pre_df = pd.DataFrame(_pre_rows)
+
+_pre_outdir = os.path.join(ROOT_PATH, "_tissue_coverage_outputs")
+os.makedirs(_pre_outdir, exist_ok=True)
+_pre_csv = os.path.join(_pre_outdir, "precheck_sample_mapping.csv")
+_pre_df.to_csv(_pre_csv, index=False)
+
+print("\n=== Pre-flight: filename → (day, genotype, cohort) ===")
+for _, r in _pre_df.iterrows():
+    print(f"- {r['sample_name']}\n    day_group={r['day_group']} | genotype={r['genotype']} | cohort={r['cohort']}")
+
+_unknowns = _pre_df[(_pre_df["day_group"] == "Unknown") | (_pre_df["genotype"] == "Unknown")]
+if len(_unknowns) > 0:
+    details = "\n".join([f"  * {r.sample_name}  (day={r.day_group}, geno={r.genotype})"
+                         for r in _unknowns.itertuples(index=False)])
+    raise ValueError(
+        "[ENFORCEMENT] One or more samples did not map cleanly via regex.\n"
+        "Please fix the filenames or regex so none are 'Unknown'.\n" + details
+    )
+
+_expected_cohorts = ["Day5·WT", "Day5·dbdb", "Day10·WT", "Day10·dbdb"]
+_present_cohorts  = sorted(_pre_df["cohort"].unique())
+_missing = [c for c in _expected_cohorts if c not in _present_cohorts]
+
+print("\n=== Cohort coverage (pre-flight) ===")
+print("Expected:", _expected_cohorts)
+print("Present :", _present_cohorts)
+if STRICT_REQUIRE_ALL_COHORTS and _missing:
+    cohort_lists = _pre_df.groupby("cohort")["sample_name"].apply(list).to_dict()
+    debug_lines = []
+    for c, lst in cohort_lists.items():
+        debug_lines.append(f"  - {c}: {len(lst)} samples")
+        for s in lst:
+            debug_lines.append(f"      · {s}")
+    raise ValueError(
+        "[ENFORCEMENT] Missing required cohort(s): " + ", ".join(_missing) + "\n"
+        "Present cohort → samples:\n" + "\n".join(debug_lines)
+    )
+print("Pre-flight mapping OK ✅  (saved →", _pre_csv, ")")
+
+# --- Color palettes (consistent across all chord plots) ---
+# Coverage bins: dark = high coverage
+BIN_COLORS = {
+    "80–100%": "#1f77b4",
+    "60–80%" : "#2ca02c",
+    "40–60%" : "#ff7f0e",
+    "20–40%" : "#d62728",
+    "0–20%"  : "#9467bd",
+}
+# Cohorts (Day×Genotype)
+COHORT_COLORS = {
+    "Day5·WT":   "#c8cbc9",
+    "Day5·dbdb": "#FEA0A0",
+    "Day10·WT":  "#76817a",
+    "Day10·dbdb":"#e24a4a",
+}
+# Day-only (for day↔bin chord)
+DAY_COLORS = {
+    "Day5":  "#1f77b4",
+    "Day10": "#ff7f0e",
+}
+# Genotype-only (for genotype↔bin chord)
+GENO_COLORS = {
+    "WT":   "#29352e",
+    "dbdb": "#e73737",
+}
+
+# --- Bin setup (coverage fraction in [0,1]) ---
+bin_edges = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0000001]
+bin_labels = ["0–20%", "20–40%", "40–60%", "60–80%", "80–100%"]
+order_bins_desc = ["80–100%", "60–80%", "40–60%", "20–40%", "0–20%"]
+
+# Output dir
+OUT_DIR = os.path.join(ROOT_PATH, "_tissue_coverage_outputs")
+os.makedirs(OUT_DIR, exist_ok=True)
+
+# --- FUNCTIONS ---
+
+def find_main_array(zroot):
+    """Return the main image array."""
+    import zarr as _zarr
+    if isinstance(zroot, _zarr.Array):
+        return zroot
+    candidates = []
+    def walk(g, prefix=""):
+        for k, v in g.items():
+            if isinstance(v, _zarr.Array):
+                candidates.append((prefix + k, v))
+            elif isinstance(v, _zarr.Group):
+                walk(v, prefix + k + "/")
+    walk(zroot)
+    if not candidates:
+        raise RuntimeError("No arrays found in data.zarr group")
+    _, best_arr = max(candidates, key=lambda kv: np.prod(kv[1].shape))
+    return best_arr
+
+def load_positions_hw(root_path, sample_name, tile_size):
+    """Load positions CSV where h=Y, w=X in pixel coords."""
+    path = os.path.join(root_path, sample_name, f"tiles/positions_{tile_size}.csv")
+    df = pd.read_csv(path, index_col=0)
+    if not {"h", "w"}.issubset(df.columns):
+        raise ValueError(f"Expected 'h' and 'w' in {path}, got {df.columns.tolist()}")
+    return pd.DataFrame({
+        "x": df["w"].astype(int),
+        "y": df["h"].astype(int),
+        "tile_id": df.index if "tile_id" not in df.columns else df["tile_id"].values
+    })
+
+def slice_tile(arr, x, y, ts):
+    """Slice tile from array given top-left (x,y)."""
+    leading = (slice(None),) * (arr.ndim - 2)
+    return arr[leading + (slice(y, y+ts), slice(x, x+ts))]
+
+def reduce_to_2d_max_ignore_channel7(tile_nd):
+    """Max across all non-spatial dims, but ignore channel index 7 if present."""
+    if tile_nd.ndim == 2:
+        return tile_nd
+    if tile_nd.shape[0] > 7:
+        tile_nd = np.delete(tile_nd, 7, axis=0)
+    axes = tuple(range(tile_nd.ndim - 2))
+    return tile_nd.max(axis=axes)
+
+def compute_tile_coverage(tile2d, min_intensity):
+    total = tile2d.size
+    present = np.count_nonzero(tile2d > min_intensity)
+    return present / total if total > 0 else 0.0
+
+# --- MAIN LOOP ---
+all_tiles = []
+
+for sample in SAMPLE_NAMES:
+    print(f"\n=== Sample: {sample} ===")
+    sample_dir = os.path.join(ROOT_PATH, sample)
+    z = zarr.open(os.path.join(sample_dir, "data.zarr"), mode="r")
+    arr = find_main_array(z)
+    H, W = arr.shape[-2], arr.shape[-1]
+    print(f"Image shape: {H}x{W}")
+
+    pos_df = load_positions_hw(ROOT_PATH, sample, TILE_SIZE)
+
+    rows = []
+    skipped = 0
+    for _, r in pos_df.iterrows():
+        x, y = int(r["x"]), int(r["y"])
+        if (x < 0) or (y < 0) or (x + TILE_SIZE > W) or (y + TILE_SIZE > H):
+            skipped += 1
+            continue
+        tile_nd = slice_tile(arr, x, y, TILE_SIZE)
+        tile_2d = reduce_to_2d_max_ignore_channel7(tile_nd)
+        cov = compute_tile_coverage(tile_2d, MIN_PIXEL_INTENSITY)
+        rows.append({
+            "sample_name": sample,
+            "day_group": day_group_from_name(sample),
+            "genotype": extract_genotype(sample),
+            "tile_id": r["tile_id"],
+            "x": x, "y": y,
+            "coverage_frac": cov,
+            "coverage_pct": cov * 100.0
+        })
+
+    sample_tiles = pd.DataFrame(rows)
+    if skipped:
+        print(f"Skipped {skipped} tiles outside bounds.")
+
+    # Bin coverage
+    sample_tiles["bin"] = pd.cut(
+        sample_tiles["coverage_frac"],
+        bins=bin_edges,
+        labels=bin_labels,
+        include_lowest=True,
+        right=False
+    )
+
+    # Save per-sample CSV
+    per_sample_dir = os.path.join(OUT_DIR, re.sub(r'[^A-Za-z0-9_.-]+','_', sample))
+    os.makedirs(per_sample_dir, exist_ok=True)
+    csv_path = os.path.join(per_sample_dir, "tiles_coverage.csv")
+    sample_tiles.to_csv(csv_path, index=False)
+    print(f"Saved: {csv_path}")
+
+    # Pie chart per sample
+    counts = sample_tiles["bin"].value_counts().reindex(order_bins_desc, fill_value=0)
+    fig = plt.figure(figsize=(6, 6))
+    plt.pie(counts.values, labels=counts.index, autopct="%1.0f%%", startangle=90)
+    plt.title(f"Tissue coverage bins\n{sample}")
+    pie_path = os.path.join(per_sample_dir, "coverage_bins_pie.png")
+    plt.savefig(pie_path, bbox_inches="tight", dpi=150)
+    plt.close(fig)
+    print(f"Saved pie: {pie_path}")
+
+    all_tiles.append(sample_tiles)
+
+# --- AGGREGATE (all samples) ---
+all_tiles_df = pd.concat(all_tiles, ignore_index=True)
+all_tiles_df["cohort"] = all_tiles_df["day_group"] + "·" + all_tiles_df["genotype"]
+
+# Audit after aggregation (belt & suspenders) + printout for chord inputs
+sample_assign = (
+    all_tiles_df.groupby("sample_name")[["day_group", "genotype"]]
+    .agg(lambda s: s.mode().iat[0] if not s.mode().empty else "Unknown")
+    .reset_index()
+)
+sample_assign["cohort"] = sample_assign["day_group"] + "·" + sample_assign["genotype"]
+assign_csv = os.path.join(OUT_DIR, "sample_group_assignments.csv")
+sample_assign.to_csv(assign_csv, index=False)
+print("\n=== Sample → Group Assignments (post-aggregation) ===")
+for _, r in sample_assign.iterrows():
+    print(f"- {r['sample_name']}: day_group={r['day_group']} | genotype={r['genotype']} | cohort={r['cohort']}")
+unknown_rows = sample_assign[(sample_assign["day_group"]=="Unknown") | (sample_assign["genotype"]=="Unknown")]
+if len(unknown_rows) > 0:
+    raise ValueError("[ENFORCEMENT] Unknown assignments after aggregation:\n" +
+                     "\n".join(f"  * {r.sample_name} (day={r.day_group}, geno={r.genotype})"
+                               for r in unknown_rows.itertuples(index=False)))
+print(f"(Saved audit CSV → {assign_csv})")
+
+agg_csv = os.path.join(OUT_DIR, "all_samples_tiles_coverage.csv")
+all_tiles_df.to_csv(agg_csv, index=False)
+print(f"\nSaved combined table: {agg_csv}")
+
+# --- SUMMARY BY DAY GROUP (COUNTS + %) ---
+group_summary = (
+    all_tiles_df
+    .groupby(["day_group", "bin"])
+    .size()
+    .unstack(fill_value=0)
+    .reindex(columns=order_bins_desc)
+    .sort_index()
+)
+group_summary_csv = os.path.join(OUT_DIR, "coverage_bins_by_day_group_counts.csv")
+group_summary.to_csv(group_summary_csv)
+print(f"Saved group counts: {group_summary_csv}")
+
+group_pct = group_summary.div(group_summary.sum(axis=1), axis=0) * 100.0
+group_pct_csv = os.path.join(OUT_DIR, "coverage_bins_by_day_group_percent.csv")
+group_pct.to_csv(group_pct_csv)
+print(f"Saved group %: {group_pct_csv}")
+
+# === HELPER: stacked bar with optional log scale on counts + clean legend ===
+def stacked_bar_counts(df_counts, title, out_path, xtick_rotation=60, log_y=True,
+                       legend_ncol=3, legend_loc="lower center", legend_outside=True):
+    """
+    df_counts: index = bars (e.g., samples or day groups),
+               columns = stack categories (ordered bottom->top),
+               values = counts per category.
+    """
+    fig, ax = plt.subplots(figsize=(max(8, len(df_counts)*0.6), 5))
+    bottom = np.zeros(len(df_counts), dtype=float)
+    x = np.arange(len(df_counts))
+
+    # Only keep columns that have any counts > 0 to declutter legend
+    nonzero_cols = [c for c in df_counts.columns if (df_counts[c].values > 0).any()]
+    df_plot = df_counts[nonzero_cols]
+
+    for col in df_plot.columns:
+        vals = df_plot[col].values.astype(float)
+        ax.bar(x, vals, bottom=bottom, label=col)
+        bottom += vals
+
+    if log_y:
+        ax.set_yscale("log")
+        totals = df_plot.sum(axis=1).values
+        if np.any(totals > 0):
+            min_pos = np.min(totals[totals > 0])
+            ax.set_ylim(bottom=max(1.0, min_pos * 0.5))
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(df_counts.index, rotation=xtick_rotation,
+                       ha='right' if xtick_rotation else 'center')
+    ax.set_ylabel("Tile count" + (" (log scale)" if log_y else ""))
+    ax.set_title(title)
+
+    # Cleaner, multi-column legend below the plot
+    handles, labels = ax.get_legend_handles_labels()
+    if legend_outside:
+        ax.legend(handles, labels, title="Coverage bin", ncol=legend_ncol,
+                  bbox_to_anchor=(0.5, -0.02), loc=legend_loc,
+                  frameon=False, borderaxespad=0.0, columnspacing=1.0, handlelength=1.6)
+        plt.tight_layout(rect=[0, 0.08, 1, 1])  # leave room at bottom
+    else:
+        ax.legend(title="Coverage bin", ncol=legend_ncol, loc=legend_loc, frameon=False)
+        plt.tight_layout()
+
+    plt.savefig(out_path, bbox_inches="tight", dpi=150)
+    plt.close(fig)
+    print(f"Saved stacked bar: {out_path}")
+
+# --- PLOTS ACROSS SAMPLES (LOG COUNTS) ---
+counts_by_sample = (
+    all_tiles_df
+    .groupby(["sample_name", "bin"])
+    .size()
+    .unstack(fill_value=0)
+    .reindex(columns=order_bins_desc)
+)
+bar_counts_path = os.path.join(OUT_DIR, "coverage_bins_by_sample_stacked_bar_logcounts.png")
+stacked_bar_counts(
+    counts_by_sample,
+    title="Tile tissue coverage distribution by sample (log counts)",
+    out_path=bar_counts_path,
+    xtick_rotation=60,
+    log_y=True,
+    legend_ncol=3
+)
+
+# --- BY DAY GROUP (LOG COUNTS) ---
+bar_group_log_path = os.path.join(OUT_DIR, "coverage_bins_by_day_group_stacked_bar_logcounts.png")
+stacked_bar_counts(
+    group_summary,
+    title="Tile coverage distribution by day group (log counts)",
+    out_path=bar_group_log_path,
+    xtick_rotation=0,
+    log_y=True,
+    legend_ncol=3
+)
+
+# --- VIOLIN PLOT (spread) ---
+desired_order = ["Day5", "Day10"]  # strict cohorts only
+present_groups = [g for g in desired_order if g in all_tiles_df["day_group"].unique()]
+data = [all_tiles_df.loc[all_tiles_df["day_group"] == g, "coverage_frac"].values for g in present_groups]
+
+fig = plt.figure(figsize=(6, 4))
+parts = plt.violinplot(data, showmeans=True, showmedians=True, showextrema=True)
+for key in ("cmeans", "cmedians"):
+    if key in parts: parts[key].set_linewidth(2)
+
+plt.xticks(np.arange(1, len(present_groups) + 1), present_groups)
+plt.ylim(0, 1)
+plt.ylabel("Coverage fraction")
+plt.title("Coverage distribution by day group (violin)")
+violin_path = os.path.join(OUT_DIR, "coverage_violin_by_day_group.png")
+plt.savefig(violin_path, bbox_inches="tight", dpi=150)
+plt.close(fig)
+print(f"Saved violin: {violin_path}")
+
+# =========================
+# CHORD (CIRCLE) PLOTS
+# =========================
+try:
+    from pycirclize import Circos
+    PYCIRCLIZE_AVAILABLE = True
+except Exception as e:
+    print(f"[Warning] pycirclize not available ({e}). Skipping chord plots.")
+    PYCIRCLIZE_AVAILABLE = False
+
+def ordered_present(labels, desired):
+    s = set(labels)
+    return [x for x in desired if x in s]
+
+def crosstab_counts(df, left_col, right_col, left_order=None, right_order=None):
+    ct = pd.crosstab(df[left_col], df[right_col]).astype(int)
+    if right_order is not None:
+        ct = ct.reindex(columns=right_order, fill_value=0)
+    if left_order is not None:
+        ct = ct.reindex(index=left_order, fill_value=0)
+    return ct
+
+def plot_chord_from_counts(
+    ct, title, outfile, space=5,
+    left_palette=None,   # dict: left labels -> color
+    right_palette=None,  # dict: right labels -> color (bins)
+    legend_bins_labels=None,
+    legend_bins_palette=None,
+    legend_ncol=5,
+    hide_right_labels=True,       # <— NEW: hide bin labels on the circle
+):
+    # Build labeled adjacency (symmetric)
+    left_labels  = list(ct.index)
+    right_labels = list(ct.columns)
+    labels = left_labels + right_labels
+
+    M = pd.DataFrame(0, index=labels, columns=labels, dtype=float)
+    M.loc[left_labels,  right_labels] = ct.values
+    M.loc[right_labels, left_labels]  = ct.values.T
+
+    # Drop all-zero sectors
+    nz = M.sum(axis=1) > 0
+    M = M.loc[nz, nz]
+    labels = list(M.index)
+
+    # Colors (dict: label -> color)
+    sector_colors = {}
+    if left_palette:
+        for l in left_labels:
+            if l in labels and l in left_palette:
+                sector_colors[l] = left_palette[l]
+    if right_palette:
+        for r in right_labels:
+            if r in labels and r in right_palette:
+                sector_colors[r] = right_palette[r]
+    for lab in labels:
+        sector_colors.setdefault(lab, "#BBBBBB")
+
+    circos = Circos.chord_diagram(
+        M,
+        space=space,
+        cmap=sector_colors,                    # must be dict
+        label_kws=dict(size=9),
+        link_kws=dict(ec="black", lw=0.5, direction=1),
+    )
+    fig = circos.plotfig(figsize=(8, 8))
+    plt.title(title)
+
+    # --- Hide bin labels drawn on the circle (keep legend as the key) ---
+    if hide_right_labels and fig.axes:
+        ax = fig.axes[0]  # main chord axes
+        for txt in list(ax.texts):
+            if txt.get_text() in right_labels:
+                txt.set_visible(False)
+
+    # Legend (bin color key)
+    if legend_bins_labels and legend_bins_palette:
+        handles = [
+            mpatches.Patch(facecolor=legend_bins_palette[lab], edgecolor="none", label=lab)
+            for lab in legend_bins_labels if lab in legend_bins_palette
+        ]
+        fig.legend(
+            handles=handles,
+            loc="lower center",
+            ncol=legend_ncol,
+            frameon=False,
+            bbox_to_anchor=(0.5, -0.02),
+        )
+        fig.subplots_adjust(bottom=0.12)
+
+    fig.savefig(outfile, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved chord: {outfile}")
+
+
+if PYCIRCLIZE_AVAILABLE:
+    expected_cohorts = ["Day5·WT", "Day5·dbdb", "Day10·WT", "Day10·dbdb"]
+
+    present_cohorts_all = sorted(all_tiles_df["cohort"].unique())
+    unknown_cohorts = [c for c in present_cohorts_all if "Unknown" in c]
+    present_cohorts = ordered_present(all_tiles_df["cohort"].unique(), expected_cohorts)
+    missing_cohorts = [c for c in expected_cohorts if c not in present_cohorts]
+
+    print("\n=== Chord Cohort Presence ===")
+    print("Expected cohorts:", expected_cohorts)
+    print("Present cohorts:", present_cohorts)
+    if missing_cohorts:
+        print("[Note] Missing expected cohorts (no tiles present):", missing_cohorts)
+    if unknown_cohorts:
+        print("[WARNING] Unknown cohorts present; they will be excluded from chord plots:", unknown_cohorts)
+
+    present_bins = [b for b in order_bins_desc if (all_tiles_df["bin"] == b).any()]
+    print("Bins used in chords (non-zero only):", present_bins)
+
+    # (A) Cohort ↔ Coverage Bin (exclude Unknown cohorts)
+    df_for_cohort = all_tiles_df[all_tiles_df["cohort"].isin(expected_cohorts)]
+    ct_cohort_bin = crosstab_counts(
+        df_for_cohort, left_col="cohort", right_col="bin",
+        left_order=expected_cohorts, right_order=present_bins
+    )
+    if ct_cohort_bin.to_numpy().sum() > 0:
+        plot_chord_from_counts(
+            ct_cohort_bin,
+            title="Tiles: Cohort (Day×Genotype) → Coverage Bin",
+            outfile=os.path.join(OUT_DIR, "chord_cohort_to_coverage_bins.png"),
+            left_palette=COHORT_COLORS,
+            right_palette=BIN_COLORS,
+            legend_bins_labels=order_bins_desc,
+            legend_bins_palette=BIN_COLORS,
+            legend_ncol=5
+        )
+    else:
+        print("[Skip] No non-zero flows for cohort→bin chord.")
+
+    # (B) Day Group ↔ Coverage Bin (exclude Unknown day group)
+    desired_day = ["Day5", "Day10"]
+    df_for_day = all_tiles_df[all_tiles_df["day_group"].isin(desired_day)]
+    present_day = ordered_present(df_for_day["day_group"].unique(), desired_day)
+    ct_day_bin = crosstab_counts(
+        df_for_day, left_col="day_group", right_col="bin",
+        left_order=present_day, right_order=present_bins
+    )
+    if ct_day_bin.to_numpy().sum() > 0:
+        plot_chord_from_counts(
+            ct_day_bin,
+            title="Tiles: Day Group → Coverage Bin",
+            outfile=os.path.join(OUT_DIR, "chord_daygroup_to_coverage_bins.png"),
+            left_palette=DAY_COLORS,
+            right_palette=BIN_COLORS,
+            legend_bins_labels=order_bins_desc,
+            legend_bins_palette=BIN_COLORS,
+            legend_ncol=5
+        )
+    else:
+        print("[Skip] No non-zero flows for day→bin chord.")
+
+    # (C) Genotype ↔ Coverage Bin (exclude Unknown genotype)
+    desired_geno = ["WT", "dbdb"]
+    df_for_geno = all_tiles_df[all_tiles_df["genotype"].isin(desired_geno)]
+    present_geno = ordered_present(df_for_geno["genotype"].unique(), desired_geno)
+    ct_geno_bin = crosstab_counts(
+        df_for_geno, left_col="genotype", right_col="bin",
+        left_order=present_geno, right_order=present_bins
+    )
+    if ct_geno_bin.to_numpy().sum() > 0:
+        plot_chord_from_counts(
+            ct_geno_bin,
+            title="Tiles: Genotype → Coverage Bin",
+            outfile=os.path.join(OUT_DIR, "chord_genotype_to_coverage_bins.png"),
+            left_palette=GENO_COLORS,
+            right_palette=BIN_COLORS,
+            legend_bins_labels=order_bins_desc,
+            legend_bins_palette=BIN_COLORS,
+            legend_ncol=5
+        )
+    else:
+        print("[Skip] No non-zero flows for genotype→bin chord.")
