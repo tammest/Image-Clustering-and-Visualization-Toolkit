@@ -1,0 +1,238 @@
+
+import os
+import re
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.patches import Patch, Rectangle
+
+# ================================
+# Load your features once
+# ================================
+FEATURES_CSV = "features_with_clusters.csv"   # <- change if needed
+features = pd.read_csv(FEATURES_CSV)
+
+# ================================
+# Utilities
+# ================================
+def _guess_step(vals: np.ndarray):
+    """Guess most common positive step size between coordinate positions."""
+    u = np.unique(vals[~np.isnan(vals)])
+    if len(u) < 2:
+        return None
+    diffs = np.diff(np.sort(u))
+    diffs = diffs[diffs > 0]
+    if len(diffs) == 0:
+        return None
+    step = float(pd.Series(np.round(diffs, 6)).mode().iloc[0])
+    return step
+
+def safe_name(s: str) -> str:
+    s = s.strip().replace(" ", "_")
+    return re.sub(r"[^A-Za-z0-9._-]+", "", s)
+
+# ================================
+# Core plotter (no outlines)
+# ================================
+def plot_tilewise_threeclass_paper(features: pd.DataFrame,
+                                   sample_name: str,
+                                   channel_idx_1: int,
+                                   channel_idx_2: int,
+                                   thresh1: float = 0.25,
+                                   thresh2: float = 0.25,
+                                   use_quantile: bool = True,
+                                   draw_squares: bool = False,
+                                   coord_mode: str = 'topleft',
+                                   tile_size: float = None,
+                                   sizes=(10, 14, 18),     # point sizes for (neither, one, both)
+                                   alphas=(0.35, 0.65, 0.95),
+                                   edge_lw: float = 0.2,
+                                   font_family: str = "DejaVu Sans",
+                                   save_path: str = None):
+    """
+    Publication-ready three-class tile map (no outlines):
+      0   = neither channel above threshold
+      0.5 = exactly one channel above threshold
+      1   = both channels above threshold
+
+    Saves as vector PDF (save_path) and a 600-dpi PNG sibling.
+    """
+
+    # Normalize names for matching
+    sample_name_norm = sample_name.strip().lower()
+    df = features.copy()
+    df['sample_name'] = df['sample_name'].str.strip().str.lower()
+    sample = df[df['sample_name'] == sample_name_norm].copy()
+    if sample.empty:
+        print(f"[WARN] No data found for sample_name: {sample_name}")
+        return
+
+    # Coordinates
+    w = pd.to_numeric(sample['w'], errors='coerce').to_numpy()
+    h = pd.to_numeric(sample['h'], errors='coerce').to_numpy()
+
+    # Channels
+    ch1 = pd.to_numeric(sample[f'channel_{channel_idx_1}'], errors='coerce').fillna(0).to_numpy(float)
+    ch2 = pd.to_numeric(sample[f'channel_{channel_idx_2}'], errors='coerce').fillna(0).to_numpy(float)
+
+    # Thresholds (quantile or absolute)
+    if use_quantile:
+        t1 = np.quantile(ch1, np.clip(thresh1, 0, 1))
+        t2 = np.quantile(ch2, np.clip(thresh2, 0, 1))
+        print(f"[{sample_name}] Quantile thresholds: ch{channel_idx_1}@q{thresh1}={t1:.4g}, ch{channel_idx_2}@q{thresh2}={t2:.4g}")
+    else:
+        t1, t2 = float(thresh1), float(thresh2)
+        print(f"[{sample_name}] Absolute thresholds: ch{channel_idx_1}>{t1}, ch{channel_idx_2}>{t2}")
+
+    # Classify tiles
+    above1, above2 = ch1 > t1, ch2 > t2
+    both = above1 & above2
+    one_only = above1 ^ above2
+    neither = ~(above1 | above2)
+
+    classes = np.zeros_like(ch1, dtype=float)
+    classes[one_only] = 0.5
+    classes[both] = 1.0
+
+    total = len(classes)
+    n_neither = int((classes == 0).sum())
+    n_one     = int((classes == 0.5).sum())
+    n_both    = int((classes == 1).sum())
+    print(f"[{sample_name}] tiles={total} | neither={n_neither} ({n_neither/total:.1%}) | one={n_one} ({n_one/total:.1%}) | both={n_both} ({n_both/total:.1%})")
+
+    # Colors (paper-friendly)
+    color_map = {
+        0.0: "#CFCFCF",  # light gray
+        0.5: "#1f77b4",  # blue
+        1.0: "#d62728",  # red
+    }
+
+    # Style
+    plt.rcParams.update({
+        "font.family": font_family,
+        "axes.linewidth": 0.8,
+        "axes.titlesize": 12,
+        "axes.labelsize": 11,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
+        "legend.fontsize": 10,
+    })
+    fig, ax = plt.subplots(figsize=(6.5, 5.5))
+
+    # Guess tile size if needed
+    if tile_size is None:
+        step_w = _guess_step(w)
+        step_h = _guess_step(h)
+        tile_size = step_w or step_h or 128.0
+
+    def _plot_class(mask: np.ndarray, cls_val: float, z: int):
+        if not np.any(mask):
+            return
+        cw, ch = w[mask], h[mask]
+        if draw_squares:
+            for xi, yi in zip(cw, ch):
+                x0 = xi - tile_size/2.0 if coord_mode == 'center' else xi
+                y0 = yi - tile_size/2.0 if coord_mode == 'center' else yi
+                ax.add_patch(Rectangle((x0, y0), tile_size, tile_size,
+                                       facecolor=color_map[cls_val], edgecolor='k',
+                                       linewidth=edge_lw, alpha=alphas[{0:0,0.5:1,1.0:2}[cls_val]], zorder=z))
+        else:
+            ax.scatter(cw, ch,
+                       s=sizes[{0:0,0.5:1,1.0:2}[cls_val]],
+                       c=color_map[cls_val],
+                       alpha=alphas[{0:0,0.5:1,1.0:2}[cls_val]],
+                       edgecolors='k',
+                       linewidths=edge_lw,
+                       zorder=z)
+
+    # Draw order: neither → one → both (so both sits on top)
+    _plot_class(neither, 0.0, z=1)
+    _plot_class(one_only, 0.5, z=2)
+    _plot_class(both,   1.0, z=3)
+
+    # Axes cosmetics
+    ax.set_aspect('equal', adjustable='box')
+    ax.invert_yaxis()
+    ax.set_xlabel("Tile Width (w)")
+    ax.set_ylabel("Tile Height (h)")
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+    ax.set_title(f"Tilewise overlap (3-class)\nch{channel_idx_1} & ch{channel_idx_2} — {sample_name}", pad=8)
+
+    # Legend at bottom (one row)
+    handles = [
+        Patch(facecolor=color_map[0.0], edgecolor='k', linewidth=edge_lw,
+              label=f"neither (n={n_neither}, {n_neither/total:.1%})"),
+        Patch(facecolor=color_map[0.5], edgecolor='k', linewidth=edge_lw,
+              label=f"one channel (n={n_one}, {n_one/total:.1%})"),
+        Patch(facecolor=color_map[1.0], edgecolor='k', linewidth=edge_lw,
+              label=f"both (n={n_both}, {n_both/total:.1%})"),
+    ]
+    ax.legend(handles=handles,
+              frameon=False,
+              loc="upper center",
+              bbox_to_anchor=(0.5, -0.08),
+              ncol=3)
+
+    fig.tight_layout()
+
+    # Save (PDF + PNG)
+    if save_path:
+        out_dir = os.path.dirname(save_path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        fig.savefig(save_path, bbox_inches='tight')               # vector PDF
+        base, _ = os.path.splitext(save_path)
+        fig.savefig(base + ".png", bbox_inches='tight', dpi=600)  # hi-res PNG
+        print(f"[OK] Saved: {save_path} and {base+'.png'}")
+
+    plt.show()
+    plt.close(fig)
+
+# ================================
+# Batch loop over samples
+# ================================
+SAMPLE_LIST = [
+    '20230721_Day 5 dbdb 4_dbdb Day 5 6_Scan6_Stitched.ome',
+    '20230721_Day 5 dbdb 4_dbdb Day 5 6_Scan6_Stitched_B.ome',
+    '20230721_Day 5 WT 3_WT Day 5 4_Scan3_Stitched.ome',
+    '20230721_Day 5 WT 3_WT Day 5 4_Scan3_Stitched_B.ome',
+    '20230721_dbdb POD10 Untr 43 R_dbdb Untr POD10 41L_Scan3_Stitched.ome',
+    '20230721_dbdb POD10 Untr 43 R_dbdb Untr POD10 41L_Scan3_Stitched_B.ome',
+    '20230721_dbdb POD10 Untr B2R_dbdb POD10 Untr B1R_Scan3_Stitched.ome',
+    '20230721_dbdb POD10 Untr B2R_dbdb POD10 Untr B1R_Scan3_Stitched_B.ome',
+    '20230721_dbdb Untr POD5 39R2_dbdb POD5 9_Scan4_Stitched.ome',
+    '20230721_dbdb Untr POD5 39R2_dbdb POD5 9_Scan4_Stitched_B.ome',
+    '20230721_POD 10 WT 1_C57 10d 1_Scan2_Stitched.ome',
+    '20230721_POD 10 WT 1_C57 10d 1_Scan2_Stitched_B.ome',
+    '20230721_WT POD 5 6_WT POD 5 7_Scan3_Stitched.ome',
+    '20230721_WT POD 5 6_WT POD 5 7_Scan3_Stitched_B.ome',
+    '20230721_WT POD10 47_WT POD 10 48_Scan2_Stitched.ome',
+    '20230721_WT POD10 47_WT POD 10 48_Scan2_Stitched_B.ome'
+]
+
+OUT_DIR = "threeclass_maps"
+os.makedirs(OUT_DIR, exist_ok=True)
+
+# Global params for all runs (edit here)
+CHANNEL_IDX_1 = 3   # CD31
+CHANNEL_IDX_2 = 4   # F480
+THRESH1 = 0.25      # quantile cutoff (since use_quantile=True)
+THRESH2 = 0.25
+USE_QUANTILE = True
+DRAW_SQUARES = False
+
+for sample in SAMPLE_LIST:
+    print(f"\n[+] Processing: {sample}")
+    out_pdf = os.path.join(OUT_DIR, f"{safe_name(sample)}_ch{CHANNEL_IDX_1}_ch{CHANNEL_IDX_2}_3class.pdf")
+    plot_tilewise_threeclass_paper(
+        features=features,
+        sample_name=sample,
+        channel_idx_1=CHANNEL_IDX_1,
+        channel_idx_2=CHANNEL_IDX_2,
+        thresh1=THRESH1,
+        thresh2=THRESH2,
+        use_quantile=USE_QUANTILE,
+        draw_squares=DRAW_SQUARES,
+        save_path=out_pdf
+    )
