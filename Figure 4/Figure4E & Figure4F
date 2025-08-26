@@ -1,0 +1,280 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+Publication-ready Elbow (with zooms) & PCA Biplot (legend-only arrows)
+---------------------------------------------------------------------
+- Features = per-tile nonzero counts per channel (0..5), AF (6) excluded
+- Plots:
+  1) Elbow (k=1..50) + two zoom panels (7–15, 25–35)  [NO red knee lines]
+  2) PCA biplot (PC1 vs PC2) with channel loadings as arrows, legend only
+
+Outputs:
+- KPM(08132025)_elbow_k1-50_pub_with_zooms.pdf / .png
+- KPM(08132025)_pca_biplot_channels_pub_legendonly.pdf / .png
+"""
+
+import os
+import numpy as np
+import pandas as pd
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+from matplotlib.patches import FancyArrowPatch
+from matplotlib.lines import Line2D
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+import zarr
+
+# =========================
+# Config
+# =========================
+RANDOM_SEED = 42
+np.random.seed(RANDOM_SEED) 
+
+
+ROOT_PATH = '/gpfs/scratch/tm3475/testforpython'
+TILE_SIZE = 128
+AF_CHANNEL_INDEX = 6
+
+# Elbow ranges
+ELBOW_FULL = range(1, 51)
+ZOOM_1 = range(7, 16)    # 7–15
+ZOOM_2 = range(25, 36)   # 25–35
+
+# Output filenames
+ELBOW_PDF = "KPM(08132025)_elbow_k1-50_pub_with_zooms.pdf"
+ELBOW_PNG = "KPM(08132025)_elbow_k1-50_pub_with_zooms.png"
+PCA_PDF   = "KPM(08132025)_pca_biplot_channels_pub_legendonly.pdf"
+PCA_PNG   = "KPM(08132025)_pca_biplot_channels_pub_legendonly.png"
+
+# Fixed sample order (your list)
+SAMPLE_NAMES = [
+    '20230721_Day 5 dbdb 4_dbdb Day 5 6_Scan6_Stitched.ome',
+    '20230721_Day 5 dbdb 4_dbdb Day 5 6_Scan6_Stitched_B.ome',
+    '20230721_Day 5 WT 3_WT Day 5 4_Scan3_Stitched.ome',
+    '20230721_Day 5 WT 3_WT Day 5 4_Scan3_Stitched_B.ome',
+    '20230721_dbdb POD10 Untr 43 R_dbdb Untr POD10 41L_Scan3_Stitched.ome',
+    '20230721_dbdb POD10 Untr 43 R_dbdb Untr POD10 41L_Scan3_Stitched_B.ome',
+    '20230721_dbdb POD10 Untr B2R_dbdb POD10 Untr B1R_Scan3_Stitched.ome',
+    '20230721_dbdb POD10 Untr B2R_dbdb POD10 Untr B1R_Scan3_Stitched_B.ome',
+    '20230721_dbdb Untr POD5 39R2_dbdb POD5 9_Scan4_Stitched.ome',
+    '20230721_dbdb Untr POD5 39R2_dbdb POD5 9_Scan4_Stitched_B.ome',
+    '20230721_POD 10 WT 1_C57 10d 1_Scan2_Stitched.ome',
+#   '20230721_POD 10 WT 1_C57 10d 1_Scan2_Stitched_B.ome',
+    '20230721_WT POD 5 6_WT POD 5 7_Scan3_Stitched.ome',
+    '20230721_WT POD 5 6_WT POD 5 7_Scan3_Stitched_B.ome',
+    '20230721_WT POD10 47_WT POD 10 48_Scan2_Stitched.ome',
+    '20230721_WT POD10 47_WT POD 10 48_Scan2_Stitched_B.ome'
+]
+
+# Channel names (your mapping)
+CHANNEL_NAME_BY_ID = {
+    0: "DAPI",
+    1: "αSMA",
+    2: "Vimentin",
+    3: "F4/80",
+    4: "CD31",
+    5: "Ki67",
+    6: "Autofluorescence"
+}
+
+# Colorblind-friendly channel colors (Okabe–Ito)
+CHANNEL_COLORS = {
+    "DAPI": "#0072B2",       # blue
+    "αSMA": "#E69F00",       # orange
+    "Vimentin": "#009E73",   # green
+    "F4/80": "#D55E00",      # vermillion
+    "CD31": "#CC79A7",       # purple-pink
+    "Ki67": "#56B4E9"        # light blue
+}
+
+# =========================
+# Matplotlib styling
+# =========================
+mpl.rcParams.update({
+    "pdf.fonttype": 42, "ps.fonttype": 42,
+    "font.family": "Arial",
+    "font.size": 12, "axes.titlesize": 16, "axes.labelsize": 14,
+    "xtick.labelsize": 12, "ytick.labelsize": 12, "legend.fontsize": 12,
+    "axes.spines.top": False, "axes.spines.right": False, "figure.dpi": 300
+})
+
+# =========================
+# IO helpers
+# =========================
+def load_zarr_and_channels(root_path, sample_name):
+    data = zarr.open(os.path.join(root_path, sample_name, 'data.zarr'), mode='r')
+    channels_path = os.path.join(root_path, sample_name, 'channels.csv')
+    channels = pd.read_csv(channels_path)
+    return data, channels
+def load_tile_positions(root_path, sample_name, tile_size):
+    path = os.path.join(root_path, sample_name, f'tiles/positions_{tile_size}.csv')
+    df = pd.read_csv(path, index_col=0)
+    if not {'w', 'h'}.issubset(df.columns):
+        raise ValueError(f"positions CSV missing 'w'/'h' columns: {path}")
+    return df
+
+# =========================
+# Features
+# =========================
+def get_kept_channels(channels_df, exclude_idx=AF_CHANNEL_INDEX):
+    kept_ids = [int(ch) for ch in channels_df['channel'].values if int(ch) != exclude_idx]
+    labels = [CHANNEL_NAME_BY_ID.get(ch, f"Ch{ch}") for ch in kept_ids]
+    return kept_ids, labels
+
+def extract_density_features(data, kept_ids, tile_df, tile_size):
+    channel_data = {ch: data[ch][:] for ch in kept_ids}
+    feats_list, valid_idx = [], []
+    for idx, tile in tile_df.iterrows():
+        x, y = int(tile['w']), int(tile['h'])
+        feats = [np.sum(channel_data[ch][y:y+tile_size, x:x+tile_size] > 0) for ch in kept_ids]
+        if np.sum(feats) > 0:
+            feats_list.append(feats)
+            valid_idx.append(idx)
+    return np.array(feats_list), valid_idx
+
+# =========================
+# Plot helpers
+# =========================
+def elbow_inertias(X, k_range):
+    vals = []
+    for k in k_range:
+        km = KMeans(n_clusters=k, random_state=RANDOM_SEED, n_init=10)
+        km.fit(X)
+        vals.append(km.inertia_)
+    return np.array(vals)
+def detect_knee(k_vals, y_vals):
+    """Maximum curvature distance to the line from first to last point."""
+    x = np.asarray(k_vals, dtype=float)
+    y = np.asarray(y_vals, dtype=float)
+    p1 = np.array([x[0], y[0]]); p2 = np.array([x[-1], y[-1]])
+    v = p2 - p1
+    if np.allclose(v, 0): return int(x[0])
+    d = np.abs(np.cross(v, np.column_stack([x, y]) - p1)) / np.linalg.norm(v)
+    knee_idx = np.argmax(d)
+    return int(x[knee_idx])
+
+def plot_elbow_with_zooms(X, out_pdf, out_png):
+    # Compute once on full range
+    ks_full = list(ELBOW_FULL)
+    inertias_full = elbow_inertias(X, ks_full)
+
+    fig = plt.figure(figsize=(11, 8))
+    gs = fig.add_gridspec(2, 2, height_ratios=[2, 1.8], width_ratios=[1, 1], hspace=0.3, wspace=0.25)
+
+    # --- Panel A: full curve ---
+    axA = fig.add_subplot(gs[0, :])
+    axA.plot(ks_full, inertias_full, marker='o', markersize=5, color='navy', linewidth=2)
+    axA.set_title('Elbow Plot (k = 1–50)')
+    axA.set_xlabel('Number of clusters (k)')
+    axA.set_ylabel('K-Means inertia (within-cluster SSE)')
+    axA.grid(True, linestyle='--', alpha=0.5)
+
+    # --- Panel B: zoom 7–15 (NO red knee line/marker) ---
+    axB = fig.add_subplot(gs[1, 0])
+    mask1 = [(k >= ZOOM_1.start) and (k <= ZOOM_1.stop - 1) for k in ks_full]
+    ks1 = np.array(ks_full)[mask1]; in1 = inertias_full[mask1]
+    axB.plot(ks1, in1, marker='o', markersize=5, color='navy', linewidth=2)
+    # (optional) compute knee but do not draw it
+    try:
+        k1 = detect_knee(ks1, in1)
+        print(f"[zoom 7–15] local elbow (not drawn): k ≈ {k1}")
+    except Exception:
+        pass
+    axB.set_title('Zoom: k = 7–15')
+    axB.set_xlabel('k'); axB.set_ylabel('Inertia'); axB.grid(True, linestyle='--', alpha=0.5)
+
+    # --- Panel C: zoom 25–35 (NO red knee line/marker) ---
+    axC = fig.add_subplot(gs[1, 1])
+    mask2 = [(k >= ZOOM_2.start) and (k <= ZOOM_2.stop - 1) for k in ks_full]
+    ks2 = np.array(ks_full)[mask2]; in2 = inertias_full[mask2]
+    axC.plot(ks2, in2, marker='o', markersize=5, color='navy', linewidth=2)
+    # (optional) compute knee but do not draw it
+    try:
+        k2 = detect_knee(ks2, in2)
+        print(f"[zoom 25–35] local elbow (not drawn): k ≈ {k2}")
+    except Exception:
+        pass
+    axC.set_title('Zoom: k = 25–35')
+    axC.set_xlabel('k'); axC.set_ylabel('Inertia'); axC.grid(True, linestyle='--', alpha=0.5)
+
+    fig.tight_layout()
+    fig.savefig(out_pdf, transparent=True, bbox_inches='tight')
+    fig.savefig(out_png, dpi=300, transparent=True, bbox_inches='tight')
+    plt.close(fig)
+    print(f"[✓] Saved: {out_pdf}\n[✓] Saved: {out_png}")
+
+def plot_pca_biplot_legend_only(X, channel_labels, out_pdf, out_png):
+    pca = PCA(n_components=2, random_state=RANDOM_SEED)
+    scores = pca.fit_transform(X)
+    loadings = pca.components_.T * np.sqrt(pca.explained_variance_)
+
+    # Scale arrows
+    norms = np.linalg.norm(loadings, axis=1)
+    max_norm = np.max(norms) if np.any(norms > 0) else 1.0
+    arrow_scale = 3.0 / max_norm
+
+    chan_colors = [CHANNEL_COLORS.get(lbl, "#333333") for lbl in channel_labels]
+
+    fig, ax = plt.subplots(figsize=(9, 8))
+    ax.scatter(scores[:, 0], scores[:, 1], s=4, alpha=0.25, edgecolors='none', color="#808080")
+
+    # arrows only; NO per-arrow text
+    for (x_raw, y_raw), c in zip(loadings, chan_colors):
+        x, y = x_raw * arrow_scale, y_raw * arrow_scale
+        arrow = FancyArrowPatch((0, 0), (x, y), mutation_scale=12, linewidth=2.0, alpha=0.95, color=c)
+        ax.add_patch(arrow)
+
+    var_pct = pca.explained_variance_ratio_ * 100.0
+    ax.set_xlabel(f'PC1 ({var_pct[0]:.1f}% variance)')
+    ax.set_ylabel(f'PC2 ({var_pct[1]:.1f}% variance)')
+    ax.set_title('PCA Biplot with Channel Loadings')
+    ax.axhline(0, color='k', lw=0.6, alpha=0.4)
+    ax.axvline(0, color='k', lw=0.6, alpha=0.4)
+    ax.grid(True, linestyle='--', alpha=0.35)
+
+    legend_elements = [Line2D([0], [0], color=CHANNEL_COLORS.get(lbl, "#333333"), lw=3, label=lbl)
+                       for lbl in channel_labels]
+    ax.legend(handles=legend_elements, title="Channels", loc='best', frameon=False)
+
+    fig.tight_layout()
+    fig.savefig(out_pdf, transparent=True, bbox_inches='tight')
+    fig.savefig(out_png, dpi=300, transparent=True, bbox_inches='tight')
+    plt.close(fig)
+    print(f"[✓] Saved: {out_pdf}\n[✓] Saved: {out_png}")
+
+# =========================
+# Main
+# =========================
+def main():
+    all_features = []
+    kept_ids = None
+    kept_labels = None
+
+    for sample in SAMPLE_NAMES:
+        data, channels = load_zarr_and_channels(ROOT_PATH, sample)
+        tiles = load_tile_positions(ROOT_PATH, sample, TILE_SIZE)
+
+        if kept_ids is None:
+            kept_ids, kept_labels = get_kept_channels(channels, exclude_idx=AF_CHANNEL_INDEX)
+            order = np.argsort(kept_ids)
+            kept_ids = list(np.array(kept_ids)[order])
+            kept_labels = list(np.array(kept_labels)[order])
+        feats, _ = extract_density_features(data, kept_ids, tiles, TILE_SIZE)
+        if feats.size:
+            all_features.append(feats)
+
+    if not all_features:
+        raise RuntimeError("No features found across samples. Check paths and data integrity.")
+
+    X = StandardScaler().fit_transform(np.vstack(all_features))
+
+    # Elbow (with zooms, no red knee lines)
+    plot_elbow_with_zooms(X, ELBOW_PDF, ELBOW_PNG)
+
+    # PCA biplot (legend-only)
+    plot_pca_biplot_legend_only(X, kept_labels, PCA_PDF, PCA_PNG)
+
+if __name__ == "__main__":
+    main()
