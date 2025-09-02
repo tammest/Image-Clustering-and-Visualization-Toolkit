@@ -1,0 +1,172 @@
+# ============================================================
+# Show example tiles for NEGATIVE vs POSITIVE sets
+# ============================================================
+import math
+from matplotlib.gridspec import GridSpec
+
+def _choose_indices(mask, n, seed=0):
+    idx = np.flatnonzero(mask)
+    if idx.size == 0:
+        return np.array([], dtype=int)
+    rng = np.random.default_rng(seed)
+    rng.shuffle(idx)
+    return idx[:min(n, idx.size)]
+
+def plot_positive_negative_tiles(
+    sample_name: str,
+    chA=CH_CD31, chB=CH_F480, chDapi=CH_DAPI,
+    qA=0.95, qB=0.15, use_quantile=True,
+    mode="both_vs_neither",     # "both_vs_neither" | "channelA" | "channelB"
+    n_each=8,                   # number of example tiles per class to show
+    img_size=IMG_SIZE,
+    out_dir="tiles_pos_neg",
+    seed=0
+):
+    """
+    Render example tiles that fall into NEGATIVE vs POSITIVE sets.
+
+    modes:
+      - "both_vs_neither":  POS = (CD31>tA & F4/80>tB), NEG = (CD31<=tA & F4/80<=tB)
+      - "channelA":         POS = (CD31>tA),           NEG = (CD31<=tA)
+      - "channelB":         POS = (F4/80>tB),          NEG = (F4/80<=tB)
+    """
+    os.makedirs(out_dir, exist_ok=True)
+
+    # ---- subset features for this sample
+    s_norm = sample_name.strip().lower()
+    df = features.copy()
+    df['sample_name'] = df['sample_name'].str.strip().str.lower()
+    sub = df[df['sample_name'] == s_norm].copy()
+    if sub.empty:
+        print(f"[WARN] No rows for sample: {sample_name}")
+        return
+
+    # columns
+    w = pd.to_numeric(sub['w'], errors='coerce').to_numpy()
+    h = pd.to_numeric(sub['h'], errors='coerce').to_numpy()
+    A = pd.to_numeric(sub[f'channel_{chA}'], errors='coerce').fillna(0).to_numpy(float)  # CD31
+    B = pd.to_numeric(sub[f'channel_{chB}'], errors='coerce').fillna(0).to_numpy(float)  # F4/80
+
+    # thresholds
+    if use_quantile:
+        tA = np.quantile(A, np.clip(qA, 0, 1))
+        tB = np.quantile(B, np.clip(qB, 0, 1))
+    else:
+        tA, tB = float(qA), float(qB)
+
+    if mode == "both_vs_neither":
+        pos_mask = (A > tA) & (B > tB)                  # BOTH
+        neg_mask = (A <= tA) & (B <= tB)                # NEITHER
+        pos_title = f"POS = both (CD31>{tA:.0f} & F4/80>{tB:.0f})"
+        neg_title = f"NEG = neither (CD31≤{tA:.0f} & F4/80≤{tB:.0f})"
+    elif mode == "channelA":
+        pos_mask = (A > tA)
+        neg_mask = ~pos_mask
+        pos_title = f"POS = CD31 > {tA:.0f}"
+        neg_title = f"NEG = CD31 ≤ {tA:.0f}"
+    elif mode == "channelB":
+        pos_mask = (B > tB)
+        neg_mask = ~pos_mask
+        pos_title = f"POS = F4/80 > {tB:.0f}"
+        neg_title = f"NEG = F4/80 ≤ {tB:.0f}"
+    else:
+        raise ValueError("mode must be 'both_vs_neither', 'channelA', or 'channelB'")
+
+    # choose example indices (reproducible)
+    pos_idx = _choose_indices(pos_mask, n_each, seed=seed)
+    neg_idx = _choose_indices(neg_mask, n_each, seed=seed)
+
+    # load zarr once
+    arr = load_sample_zarr(ROOT_PATH, sample_name)
+
+    # ---- layout: two blocks (NEG on left, POS on right), each row shows [CD31 gray | F4/80 gray | Overlay]
+    n_rows = max(len(neg_idx), len(pos_idx))
+    if n_rows == 0:
+        print("[WARN] No tiles available for the requested classes.")
+        return
+
+    fig_w = 12.0
+    fig_h = 1.6 + n_rows * 1.6
+    fig = plt.figure(figsize=(fig_w, fig_h))
+    gs = GridSpec(n_rows + 1, 6, width_ratios=[1,1,1, 1,1,1], hspace=0.35, wspace=0.35)
+
+    # Titles
+    ax_tneg = fig.add_subplot(gs[0, 0:3]); ax_tneg.axis("off")
+    ax_tpos = fig.add_subplot(gs[0, 3:6]); ax_tpos.axis("off")
+    ax_tneg.text(0, 0.5, f"{neg_title}\n(n={neg_mask.sum()})", color="#444", fontsize=11, va="center")
+    ax_tpos.text(0, 0.5, f"{pos_title}\n(n={pos_mask.sum()})", color="#444", fontsize=11, va="center")
+
+    # helper to draw a row for a given index on side (left/right)
+    def draw_row(row_i, idx, left=True):
+        if idx is None:
+            # blank row
+            for j in range(3):
+                ax = fig.add_subplot(gs[row_i+1, (0 if left else 3)+j])
+                ax.axis("off")
+            return
+        th, tw = int(h[idx]), int(w[idx])
+        A_gray, B_gray, overlay = render_tile_triptych(
+            arr, th, tw, img_size, chA, chB, chDapi,
+            clip_pct=CLIP_PCT_TILE, dapi_gain=DAPI_FAINT
+        )
+        # CD31 gray
+        axA = fig.add_subplot(gs[row_i+1, (0 if left else 3) + 0])
+        axA.imshow(A_gray, cmap="gray"); axA.set_axis_off()
+        if row_i == 0:
+            axA.set_title("CD31 (gray)", color="#cc0000", fontsize=10)
+        # F4/80 gray
+        axB = fig.add_subplot(gs[row_i+1, (0 if left else 3) + 1])
+        axB.imshow(B_gray, cmap="gray"); axB.set_axis_off()
+        if row_i == 0:
+            axB.set_title("F4/80 (gray)", color="#0a8a0a", fontsize=10)
+        # Overlay
+        axO = fig.add_subplot(gs[row_i+1, (0 if left else 3) + 2])
+        axO.imshow(overlay); axO.set_axis_off()
+        if row_i == 0:
+            axO.set_title("Overlay", fontsize=10)
+        # coords label
+        axO.text(0.02, 0.98, f"h={th}, w={tw}", transform=axO.transAxes,
+                 ha="left", va="top", fontsize=8, color="white",
+                 bbox=dict(facecolor="black", alpha=0.35, pad=2, lw=0))
+
+    # draw rows
+    for r in range(n_rows):
+        neg_i = int(neg_idx[r]) if r < len(neg_idx) else None
+        pos_i = int(pos_idx[r]) if r < len(pos_idx) else None
+        draw_row(r, neg_i, left=True)
+        draw_row(r, pos_i, left=False)
+
+    fig.suptitle(f"{sample_name}", y=0.995, fontsize=12)
+    out_base = f"{safe_name(sample_name)}__tiles_{mode}_n{n_each}"
+    out_png = os.path.join(out_dir, out_base + ".png")
+    out_pdf = os.path.join(out_dir, out_base + ".pdf")
+    fig.savefig(out_png, dpi=300, bbox_inches="tight")
+    fig.savefig(out_pdf, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[OK] Saved: {out_png}\n[OK] Saved: {out_pdf}")
+
+
+# 1) Show BOTH (POS) vs NEITHER (NEG) for a sample
+plot_positive_negative_tiles(
+    '20230721_dbdb Untr POD5 39R2_dbdb POD5 9_Scan4_Stitched.ome',
+    qA=0.95, qB=0.15, use_quantile=True,
+    mode="both_vs_neither",
+    n_each=10,              # show 10 examples from each side
+    seed=1                  # change seed to see different examples
+)
+
+# 2) Per-channel: CD31 positives vs negatives
+plot_positive_negative_tiles(
+    '20230721_WT POD10 47_WT POD 10 48_Scan2_Stitched.ome',
+    qA=0.95, qB=0.15, use_quantile=True,
+    mode="channelA",        # looks only at CD31 cutoff
+    n_each=8
+)
+
+# 3) Per-channel: F4/80 positives vs negatives
+plot_positive_negative_tiles(
+    '20230721_WT POD 5 6_WT POD 5 7_Scan3_Stitched.ome',
+    qA=0.95, qB=0.15, use_quantile=True,
+    mode="channelB",        # looks only at F4/80 cutoff
+    n_each=8
+)
