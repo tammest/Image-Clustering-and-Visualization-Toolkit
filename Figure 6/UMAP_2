@@ -1,0 +1,73 @@
+import pandas as pd
+import umap
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+import matplotlib.lines as mlines
+from sklearn.preprocessing import StandardScaler
+
+# 1. Load the CSV
+df = pd.read_csv("filtered_density31_intensity31.csv")
+
+# 2. Define feature columns (intensity features)
+feature_cols = [
+    'feature_0_mean_intensity_dapi', 'feature_1_mean_intensity_aSMA', 'feature_2_mean_intensity_VIM',
+    'feature_3_mean_intensity_F480', 'feature_4_mean_intensity_CD31', 'feature_5_mean_intensity_KI67'
+]
+
+# 3. Clean and scale features
+features = df[feature_cols].values
+valid_mask = ~np.isnan(features).any(axis=1)
+features_clean = features[valid_mask]
+df_clean = df.loc[valid_mask]
+
+scaler = StandardScaler()
+features_scaled = scaler.fit_transform(features_clean)
+
+# 4. Run UMAP
+reducer = umap.UMAP(n_neighbors=15, min_dist=0.1, metric='euclidean', random_state=42)
+embeddings = reducer.fit_transform(features_scaled)
+
+# 5. Plot mean_intensity_cluster_41/31 (numeric)
+unique_clusters = sorted(df_clean['mean_intensity_cluster_31'].dropna().unique())
+cmap = plt.cm.get_cmap('tab20', len(unique_clusters))
+color_dict = {cluster: cmap(i) for i, cluster in enumerate(unique_clusters)}
+cluster_colors = df_clean['mean_intensity_cluster_31'].map(color_dict)
+
+plt.figure(figsize=(10, 8))
+plt.scatter(embeddings[:, 0], embeddings[:, 1], c=cluster_colors, s=10, alpha=0.8, edgecolors='none')
+handles = [mlines.Line2D([], [], marker='o', linestyle='None', markersize=8,
+                         markerfacecolor=color_dict[cluster], label=str(cluster))
+           for cluster in unique_clusters]
+plt.legend(handles=handles, title='Mean Intensity Cluster 31', bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
+plt.title('UMAP: mean_intensity_cluster_41')
+plt.xlabel('UMAP 1')
+plt.ylabel('UMAP 2')
+plt.tight_layout()
+plt.savefig("umap_mean_intensity_cluster_31.pdf", bbox_inches='tight')
+plt.close()
+
+# 6. Plot mean_intensity_cluster_41_supercluster (categorical)
+unique_superclusters = sorted(df_clean['mean_intensity_cluster_31'].dropna().unique())
+palette = sns.color_palette("Set2", len(unique_superclusters))
+supercluster_color_dict = {name: palette[i] for i, name in enumerate(unique_superclusters)}
+
+# Safely map and drop rows with missing color assignments
+df_clean_super = df_clean[df_clean['mean_intensity_cluster_31'].isin(supercluster_color_dict.keys())]
+supercluster_colors = df_clean_super['mean_intensity_cluster_31'].map(supercluster_color_dict).tolist()
+embedding_super = embeddings[df_clean_super.index]
+
+plt.figure(figsize=(10, 8))
+plt.scatter(embedding_super[:, 0], embedding_super[:, 1], c=supercluster_colors, s=10, alpha=0.8, edgecolors='none')
+
+handles = [mlines.Line2D([], [], marker='o', linestyle='None', markersize=8,
+                         markerfacecolor=supercluster_color_dict[name], label=name)
+           for name in unique_superclusters]
+plt.legend(handles=handles, title='Mean Intensity Clusters 31', bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
+plt.title('UMAP: mean_intensity_cluster_31_supercluster')
+plt.xlabel('UMAP 1')
+plt.ylabel('UMAP 2')
+plt.tight_layout()
+plt.savefig("umap_mean_intensity_cluster_31.pdf", bbox_inches='tight')
+plt.close()
+
