@@ -118,7 +118,7 @@ print("Pre-flight mapping OK ✅  (saved →", _pre_csv, ")")
 # --- Color palettes (consistent across all chord plots) ---
 # Coverage bins: dark = high coverage
 BIN_COLORS = {
-    "80–100%": "#1f77b4",
+    "80–100%": "#3B82F6",
     "60–80%" : "#2ca02c",
     "40–60%" : "#ff7f0e",
     "20–40%" : "#d62728",
@@ -433,58 +433,76 @@ def crosstab_counts(df, left_col, right_col, left_order=None, right_order=None):
 
 def plot_chord_from_counts(
     ct, title, outfile, space=5,
-    left_palette=None,   # dict: left labels -> color
-    right_palette=None,  # dict: right labels -> color (bins)
+    left_palette=None,          # dict: left labels -> color (cohorts)
+    right_palette=None,         # dict: right labels -> color (bins)
     legend_bins_labels=None,
     legend_bins_palette=None,
     legend_ncol=5,
-    hide_right_labels=True,       # <— NEW: hide bin labels on the circle
+    hide_right_labels=False,    # set True to hide bin labels on the ring
 ):
-    # Build labeled adjacency (symmetric)
+    from pycirclize import Circos
+    import matplotlib.patches as mpatches
+
+    # --- Build square adjacency with symmetric weights (one undirected ribbon) ---
     left_labels  = list(ct.index)
     right_labels = list(ct.columns)
     labels = left_labels + right_labels
 
-    M = pd.DataFrame(0, index=labels, columns=labels, dtype=float)
+    M = pd.DataFrame(0.0, index=labels, columns=labels)
     M.loc[left_labels,  right_labels] = ct.values
-    M.loc[right_labels, left_labels]  = ct.values.T
+    M.loc[right_labels, left_labels]  = ct.values.T   # keep symmetric to avoid zero sectors
 
-    # Drop all-zero sectors
-    nz = M.sum(axis=1) > 0
+    # Early exit if everything is zero
+    if M.values.sum() == 0:
+        print("[Skip] All-zero matrix for chord diagram.")
+        return
+
+    # Drop sectors with no connections
+    deg = M.sum(axis=1)
+    nz = deg > 0
     M = M.loc[nz, nz]
-    labels = list(M.index)
+    left_labels  = [l for l in left_labels  if l in M.index]
+    right_labels = [r for r in right_labels if r in M.index]
 
-    # Colors (dict: label -> color)
+    # --- Sector colors: cohorts (left) and bins (right) keep their palettes ---
     sector_colors = {}
     if left_palette:
         for l in left_labels:
-            if l in labels and l in left_palette:
-                sector_colors[l] = left_palette[l]
+            sector_colors[l] = left_palette.get(l, "#888888")
     if right_palette:
         for r in right_labels:
-            if r in labels and r in right_palette:
-                sector_colors[r] = right_palette[r]
-    for lab in labels:
-        sector_colors.setdefault(lab, "#BBBBBB")
+            sector_colors[r] = right_palette.get(r, "#BBBBBB")
+
+    # --- Link styling: color each ribbon by the BIN (right) wedge color ---
+    def link_kws_handler(src, dst, value):
+        # Determine the bin side of the pair, then use its color
+        if dst in right_labels and right_palette and dst in right_palette:
+            col = right_palette[dst]
+        elif src in right_labels and right_palette and src in right_palette:
+            col = right_palette[src]
+        else:
+            col = "#999999"
+        return dict(fc=col, ec=col, lw=0.6, alpha=0.9)
 
     circos = Circos.chord_diagram(
         M,
         space=space,
-        cmap=sector_colors,                    # must be dict
+        cmap=sector_colors,                     # sector colors
         label_kws=dict(size=9),
-        link_kws=dict(ec="black", lw=0.5, direction=1),
+        link_kws=dict(),                        # base defaults
+        link_kws_handler=link_kws_handler,      # per-link color = bin color
     )
     fig = circos.plotfig(figsize=(8, 8))
     plt.title(title)
 
-    # --- Hide bin labels drawn on the circle (keep legend as the key) ---
+    # Optionally hide right labels for a cleaner look
     if hide_right_labels and fig.axes:
-        ax = fig.axes[0]  # main chord axes
+        ax = fig.axes[0]
         for txt in list(ax.texts):
             if txt.get_text() in right_labels:
                 txt.set_visible(False)
 
-    # Legend (bin color key)
+    # Bin legend (uses your intended bin colors)
     if legend_bins_labels and legend_bins_palette:
         handles = [
             mpatches.Patch(facecolor=legend_bins_palette[lab], edgecolor="none", label=lab)
@@ -502,7 +520,6 @@ def plot_chord_from_counts(
     fig.savefig(outfile, dpi=300, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved chord: {outfile}")
-
 
 if PYCIRCLIZE_AVAILABLE:
     expected_cohorts = ["Day5·WT", "Day5·dbdb", "Day10·WT", "Day10·dbdb"]
