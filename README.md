@@ -1,126 +1,185 @@
-# Image-Clustering-and-Visualization-Toolkit
+# Image Clustering and Visualization Toolkit
 
-### Overview:
-This repository provides a set of Python scripts for processing multi-channel imaging data, including:
+## Overview
 
-- **Conversion** of TIFF files to Zarr format
-- **Tile generation** from large slides
-- **Clustering and PCA analysis**
-- **Visualization** of clustering results and feature analysis
-- **Analysis** of tissue layers and its respective super clusters
-  
+This repository contains scripts for processing and analyzing multiplex imaging datasets. The workflow includes image conversion, tile generation, feature extraction, clustering, dimensionality reduction, and visualization of tissue features.
+
+The toolkit was developed for analysis of multi-channel fluorescence imaging data stored in OME-TIFF and OME-Zarr formats.
 
 ---
 
-## Conversion from TIFF to Zarr Format
+## Main Features
 
-- **Setup input and output paths**
-  - Define the file paths for TIFF and Zarr files
-  - Create directories if they don’t exist
-
-- **Check if the Zarr file already exists**
-  - If the file exists, **skip conversion**
-
-- **Process channel information**
-  - Check if a channel file exists
-  - If it exists, use custom channels from the file
-  - If it doesn’t exist, use **default channels** provided in the function
-
-- **Read TIFF file data**
-  - Load the TIFF file using the `tifffile` library
-  - Convert image data to an integer type
-
-- **Validate channels**
-  - Check if the number of channels in the TIFF matches the provided channels
-  - If mismatch occurs, raise an **AssertionError**
-
-- **Write channels to CSV**
-  - Write each channel's name and marker to a CSV file
-
-- **Convert image data to Zarr format**
-  - Use the `zarr.array` function to write data in chunks
-
-- **Print success message**
-  - After conversion, print a success message
+- Convert OME-TIFF images to Zarr format
+- Generate tiles from large whole-slide images
+- Extract density and intensity features from tiles
+- Perform clustering analysis
+- Generate PCA and UMAP visualizations
+- Analyze tissue layers and superclusters
+- Create cluster maps and tissue overlays
+- Generate publication-quality figures
 
 ---
 
-## Tile Generation
+## Installation
 
-- **Setup output directory for tiles**
-  - Create the directory if it doesn’t exist
+Clone the repository:
 
-- **Read the Zarr file containing image data**
-  - Load image data from Zarr file
+```bash
+git clone https://github.com/tammest/Image-Clustering-and-Visualization-Toolkit.git
+cd Image-Clustering-and-Visualization-Toolkit
+```
 
-- **Generate a thumbnail image from the slide data**
-  - Downscale the image and remove bright pixels
+Create the Conda environment:
 
-- **Generate a mask for the thumbnail**
-  - Create a **binary mask** based on a brightness threshold
-
-- **Generate and save tile positions**
-  - Split the slide into tiles based on the mask
-  - Save tile positions in a CSV file
+```bash
+conda env create -f environment.yml
+conda activate clustering_env
+```
 
 ---
 
-## Feature Extraction and Clustering
+## Environment
 
-- **Load Zarr data and channels**
-  - Load data and channel information from Zarr and CSV files
+Create an `environment.yml` file:
 
-- **Extract features from tiles**
-  - For each tile, calculate pixel density for each channel
+```yaml
+name: clustering_env
 
-- **Compute Within-Cluster Sum of Squares (WCSS)**
-  - Run KMeans clustering on extracted features
+channels:
+  - conda-forge
+  - defaults
 
-- **Perform PCA on features**
-  - Apply PCA to reduce features to 2D for visualization
-  - Plot clustering results with colors representing different clusters
-
----
-
-## Cluster Visualization
-
-- **Increase brightness of autofluorescence channel**
-  - Enhance brightness by **scaling pixel values**
-
-- **Plot tile positions on the image**
-  - Scale tile positions to match image dimensions
-  - Visualize tile positions with cluster colors
-
----
-## Supercluster Visualization 
-
-- **Determine Tissue Layers**
-  - Enhance brightness by **scaling pixel values**
-
-- **Plot tile positions on the image**
-  - Scale tile positions to match image dimensions
-  - Visualize tile positions with cluster colors
+dependencies:
+  - python=3.9
+  - numpy=1.26.4
+  - pandas=1.5.3
+  - matplotlib
+  - seaborn
+  - scikit-learn
+  - umap-learn
+  - zarr
+  - scanpy
+  - anndata
+  - tqdm
+  - pip
+  - pip:
+      - pycirclize
+```
 
 ---
 
-## Correlation Analysis
+## Workflow
 
-- **Generate a correlation matrix for channel densities**
-  - Calculate **Pearson’s correlation coefficient** between channel densities
-  - Plot the correlation matrix as a heatmap
+### 1. TIFF to Zarr Conversion
 
-- **Generate scatter plots of channel density correlations**
-  - Plot scatter plots for each pair of channels
-  - Display Pearson’s **r value** on each plot
+OME-TIFF images are converted to Zarr format for efficient storage and access. Channel information is preserved and stored alongside the image data.
 
-- **Generate histograms of channel density distributions**
-  - Plot histograms of density values for each channel
+**Outputs**
+
+- `data.zarr`
+- Channel metadata files
+
+### 2. Tile Generation
+
+Whole-slide images are divided into smaller tiles for downstream analysis. Tissue-containing regions are identified using thumbnail masks.
+
+**Outputs**
+
+- Tile coordinate files
+- Thumbnail masks
+
+### 3. Feature Extraction
+
+Features are calculated for each tile, including marker density and mean intensity measurements.
+
+**Outputs**
+
+- Feature tables (`.csv`)
+
+### 4. Clustering and Dimensionality Reduction
+
+Tile features can be clustered using K-means and visualized using PCA or UMAP.
+
+**Outputs**
+
+- Cluster assignments
+- PCA plots
+- UMAP embeddings
+
+### 5. Tissue Layer and Supercluster Analysis
+
+Clusters can be grouped into broader tissue categories based on marker expression patterns.
+
+**Outputs**
+
+- Tissue annotations
+- Supercluster assignments
+
+### 6. Visualization
+
+The repository includes scripts for generating:
+
+- Cluster maps
+- Tissue overlays
+- Correlation heatmaps
+- UMAP plots
+- Histograms
+- Example tile visualizations
+- Publication figures
 
 ---
 
-### Additional Enhancements:
-- **Links to Documentation**: Respective libraries or related resources:
-  - [tifffile documentation](https://pypi.org/project/tifffile/)
-  - [Zarr Python documentation](https://zarr.readthedocs.io/en/stable/)
-  - [scikit-learn clustering documentation](https://scikit-learn.org/stable/modules/clustering.html)
+## Input Data
+
+Typical inputs include:
+
+- OME-TIFF images
+- OME-Zarr datasets
+- Tile coordinate files
+- Feature tables (`.csv`)
+
+---
+
+## Output Files
+
+Examples of generated outputs include:
+
+- Zarr datasets
+- Feature tables
+- Cluster annotations
+- UMAP embeddings
+- Correlation plots
+- PNG figures
+- PDF figures
+
+---
+
+## Dependencies
+
+Main packages used in this repository:
+
+- NumPy
+- Pandas
+- Matplotlib
+- Seaborn
+- Scikit-learn
+- UMAP-learn
+- Zarr
+- Scanpy
+- AnnData
+
+---
+
+## References
+
+- tifffile: https://pypi.org/project/tifffile/
+- Zarr: https://zarr.readthedocs.io/
+- Scikit-learn: https://scikit-learn.org/
+- UMAP: https://umap-learn.readthedocs.io/
+- Scanpy: https://scanpy.readthedocs.io/
+
+---
+This work is available as a bioRxiv preprint:
+[![bioRxiv](https://img.shields.io/badge/bioRxiv-2025.08.19.671136v1-B31B1B.svg)](https://www.biorxiv.org/content/10.1101/2025.08.19.671136v1)
 
