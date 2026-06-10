@@ -10,19 +10,19 @@ import matplotlib.pyplot as plt
 csv_path = "features_with_clusters.csv"
 df = pd.read_csv(csv_path)
 
-zarr_path = "/gpfs/scratch/tm3475/testforpython/20230721_dbdb Untr POD5 39R2_dbdb POD5 9_Scan4_Stitched.ome/data.zarr"
-arr_data = zarr.open(zarr_path, mode="r")
+zarr_path = "data/ome_tiffs/sample_01.ome/data.zarr"
+zarr_data = zarr.open(zarr_path, mode="r")
 
 # Colors per channel (0-based indices)
 # 0:DAPI, 1:aSMA, 2:VIM, 3:F4/80, 4:CD31, 5:KI-67, 6:AF
 CHANNEL_COLORS = [
-    [0, 0, 0],  # DAPI (blue)
-    [0, 0, 0],  # aSMA (cyan)
-    [0, 0, 0],  # VIM (magenta)
-    [0, 0, 0],  # F4/80 (green)
-    [0, 0, 0],  # CD31 (red)
-    [0, 0, 0],  # KI-67 (yellow)
-    [1, 1, 1],  # AF (white)
+    [0, 0, 1],  # DAPI blue
+    [0, 1, 1],  # aSMA cyan
+    [1, 0, 1],  # VIM magenta
+    [0, 1, 0],  # F4/80 green
+    [1, 0, 0],  # CD31 red
+    [1, 1, 0],  # KI-67 yellow
+    [1, 1, 1],  # AF white
 ]
 
 # Optional per-channel gain to balance dominance (1.0 = unchanged)
@@ -188,8 +188,5 @@ get_tile_from_csv(
     arr_data,
     h=4480,
     w=1792,
-    save_path="/gpfs/scratch/tm3475/testforpython"
+    save_path="outputs/tile_visualizations"
 )
-
-
-###4480, 1792 - f480 is missing 
