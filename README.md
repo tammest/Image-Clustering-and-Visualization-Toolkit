@@ -101,5 +101,3 @@ The repository contains scripts for:
 This project is distributed under the GPL-3.0 License.
 
 See the `LICENSE` file for details.
-
-See the `LICENSE` file for details.
