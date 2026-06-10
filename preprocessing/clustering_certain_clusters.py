@@ -379,13 +379,13 @@ def main(root_path, sample_names, tile_size=128):
 
 # Main execution
 if __name__ == "__main__":
-    root_path = '/gpfs/scratch/tm3475'
+    root_path = ''
     sample_names = [
-        '20230513_KPM-PB-17_18_Scan1T.ome',
-        '20230513_KPM-PB-15_Scan1T.ome',
-        '20230513_KPM-PB-17_18_Scan1.ome',
-        '20230513_KPM-PB-14_Scan1T.ome',
-        '20230513_KPM-PB-20_Scan1T.ome'
+        'sample_1.ome',
+        'sample_2.ome',
+        'sample_3.ome',
+        'sample_4.ome',
+        'sample_5.ome'
     ]
 
     main(root_path, sample_names, tile_size=128)
