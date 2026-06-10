@@ -379,7 +379,7 @@ def main(root_path, sample_names, tile_size=128):
 
 # Main execution
 if __name__ == "__main__":
-    root_path = ''
+    root_path = 'data/ome_tiffs''
     sample_names = [
         'sample_1.ome',
         'sample_2.ome',
