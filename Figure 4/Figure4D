@@ -14,7 +14,7 @@ from tqdm import tqdm
 # =========================
 # Config
 # =========================
-ROOT_PATH = '/gpfs/scratch/tm3475/testforpython'
+ROOT_PATH = 'data/ome_tiffs'
 TILE_SIZE = 128
 
 # Per-tile counts:
