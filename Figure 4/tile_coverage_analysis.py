@@ -22,26 +22,27 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 
 # --- USER SETTINGS ---
-ROOT_PATH = '/gpfs/scratch/tm3475/testforpython'
+ROOT_PATH = 'data/ome_tiffs'
 TILE_SIZE = 128
 SAMPLE_NAMES = [
-    '20230721_Day 5 dbdb 4_dbdb Day 5 6_Scan6_Stitched.ome',
-    '20230721_Day 5 dbdb 4_dbdb Day 5 6_Scan6_Stitched_B.ome',
-    '20230721_Day 5 WT 3_WT Day 5 4_Scan3_Stitched.ome',
-    '20230721_Day 5 WT 3_WT Day 5 4_Scan3_Stitched_B.ome',
-    '20230721_dbdb POD10 Untr 43 R_dbdb Untr POD10 41L_Scan3_Stitched.ome',
-    '20230721_dbdb POD10 Untr 43 R_dbdb Untr POD10 41L_Scan3_Stitched_B.ome',
-    '20230721_dbdb POD10 Untr B2R_dbdb POD10 Untr B1R_Scan3_Stitched.ome',
-    '20230721_dbdb POD10 Untr B2R_dbdb POD10 Untr B1R_Scan3_Stitched_B.ome',
-    '20230721_dbdb Untr POD5 39R2_dbdb POD5 9_Scan4_Stitched.ome',
-    '20230721_dbdb Untr POD5 39R2_dbdb POD5 9_Scan4_Stitched_B.ome',
-    '20230721_POD 10 WT 1_C57 10d 1_Scan2_Stitched.ome',
-    # '20230721_POD 10 WT 1_C57 10d 1_Scan2_Stitched_B.ome',
-    '20230721_WT POD 5 6_WT POD 5 7_Scan3_Stitched.ome',
-    '20230721_WT POD 5 6_WT POD 5 7_Scan3_Stitched_B.ome',
-    '20230721_WT POD10 47_WT POD 10 48_Scan2_Stitched.ome',
-    '20230721_WT POD10 47_WT POD 10 48_Scan2_Stitched_B.ome'
+    'sample_1.ome',
+    'sample_2.ome',
+    'sample_3.ome',
+    'sample_4.ome',
+    'sample_5.ome',
+    'sample_6.ome',
+    'sample_7.ome',
+    'sample_8.ome',
+    'sample_9.ome',
+    'sample_10.ome',
+    'sample_11.ome',
+    'sample_12.ome',
+    'sample_13.ome',
+    'sample_14.ome',
+    'sample_15.ome',
+    'sample_16.ome'
 ]
+
 
 MIN_PIXEL_INTENSITY = 0  # consider pixel present if > 0
 
