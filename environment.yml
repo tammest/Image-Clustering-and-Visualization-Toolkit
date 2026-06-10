@@ -1,0 +1,21 @@
+name: clustering_env
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.9
+  - numpy=1.26.4
+  - pandas=1.5.3
+  - matplotlib
+  - seaborn
+  - scikit-learn
+  - umap-learn
+  - zarr
+  - scanpy
+  - anndata
+  - tqdm
+  - pip
+  - pip:
+      - pycirclize
