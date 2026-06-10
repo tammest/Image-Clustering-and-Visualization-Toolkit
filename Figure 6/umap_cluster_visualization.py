@@ -1,3 +1,14 @@
+"""
+UMAP visualization of tile-level imaging features.
+
+This script scales selected tile-level density features, computes a UMAP
+embedding, and generates UMAP plots colored by cluster and supercluster labels.
+
+Raw data are not included in this public repository.
+Input CSV paths are placeholders.
+"""
+
+
 import pandas as pd
 import umap
 import matplotlib.pyplot as plt
