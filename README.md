@@ -8,6 +8,9 @@ The toolkit was developed for analysis of multiplex fluorescence imaging dataset
 
 ---
 
+![Workflow](README_assets/workflow.png)
+
+
 ## Associated Manuscript
 
 This repository accompanies the manuscript:
