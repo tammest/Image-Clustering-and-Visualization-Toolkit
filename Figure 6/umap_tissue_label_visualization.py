@@ -1,3 +1,12 @@
+"""
+UMAP visualization of tile-level features with inferred tissue labels.
+
+This script computes a UMAP embedding from scaled tile-level density features
+and generates plots colored by clustering labels and inferred dominant tissue
+annotations.
+"""
+
+
 import pandas as pd
 import umap
 import matplotlib.pyplot as plt
