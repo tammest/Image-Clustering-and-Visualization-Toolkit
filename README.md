@@ -59,45 +59,47 @@ conda activate clustering_env
 Image-Clustering-and-Visualization-Toolkit/
 │
 ├── preprocessing/
+│   ├── clustering_certain_clusters.py
+│   ├── clustering_plotting.py
+│   ├── gen_tiles.py
+│   ├── individual_clusters.py
 │   ├── read_OME_TIFF.py
-│   ├── tiff_to_zarr.py
-│   └── gen_tiles.py
+│   └── tiff_to_zarr.py
 │
 ├── Figure 4/
 ├── Figure 5/
 ├── Figure 6/
 ├── Figure 7/
 │
-├── clustering_certain_clusters.py
-├── clustering_plotting.py
-├── individual_clusters.py
-│
 ├── environment.yml
 ├── LICENSE
 └── README.md
 ```
 
-The repository is organized according to the figures presented in the manuscript. Scripts used to generate each figure are located in the corresponding figure directory.
+The repository is organized into preprocessing scripts and figure-specific analysis directories. Scripts used to generate figures in the associated manuscript are located in their corresponding figure folders.
 
 ---
 
-## Example Outputs
+## Analyses Included
 
-The repository contains scripts and visualizations for:
+The repository contains scripts for:
 
-- Cluster maps
+- Tile generation from whole-slide images
+- Density and intensity feature extraction
+- Cluster and supercluster analysis
 - PCA visualizations
-- UMAP embeddings
-- Tissue layer and supercluster analysis
+- UMAP visualizations
 - Marker co-localization analysis
 - Positive and negative tile comparisons
 - Genotype-specific comparisons (WT vs db/db)
-- Publication-quality figures
+- Publication-quality figure generation
 
 ---
 
 ## License
 
 This project is distributed under the GPL-3.0 License.
+
+See the `LICENSE` file for details.
 
 See the `LICENSE` file for details.
