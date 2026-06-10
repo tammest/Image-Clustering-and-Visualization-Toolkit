@@ -23,7 +23,7 @@ import numpy as np
 
 # Path to your OME-TIFF image
 #image_path = 'trial1.ome.tif'
-image_path =  '20230513_KPM-PB-11_Scan1T.ome.tif'
+image_path =  'Sample_1.ome.tif'
 
 # Read OME-TIFF image using tifffile
 image = tifffile.imread(image_path)
