@@ -1,5 +1,5 @@
 # ============================================================
-# Show example tiles for NEGATIVE vs POSITIVE sets
+# Marker-positive and marker-negative tile examples
 # ============================================================
 import math
 from matplotlib.gridspec import GridSpec
@@ -19,7 +19,7 @@ def plot_positive_negative_tiles(
     mode="both_vs_neither",     # "both_vs_neither" | "channelA" | "channelB"
     n_each=8,                   # number of example tiles per class to show
     img_size=IMG_SIZE,
-    out_dir="tiles_pos_neg",
+    out_dir="outputs/positive_negative_tile_examples",
     seed=0
 ):
     """
@@ -146,27 +146,34 @@ def plot_positive_negative_tiles(
     print(f"[OK] Saved: {out_png}\n[OK] Saved: {out_pdf}")
 
 
-# 1) Show BOTH (POS) vs NEITHER (NEG) for a sample
-plot_positive_negative_tiles(
-    '20230721_dbdb Untr POD5 39R2_dbdb POD5 9_Scan4_Stitched.ome',
-    qA=0.95, qB=0.15, use_quantile=True,
-    mode="both_vs_neither",
-    n_each=10,              # show 10 examples from each side
-    seed=1                  # change seed to see different examples
-)
+if __name__ == "__main__":
+    # 1) Both-marker positive vs neither-marker negative
+    plot_positive_negative_tiles(
+        "sample_9.ome",
+        qA=0.95,
+        qB=0.15,
+        use_quantile=True,
+        mode="both_vs_neither",
+        n_each=10,
+        seed=1
+    )
 
-# 2) Per-channel: CD31 positives vs negatives
-plot_positive_negative_tiles(
-    '20230721_WT POD10 47_WT POD 10 48_Scan2_Stitched.ome',
-    qA=0.95, qB=0.15, use_quantile=True,
-    mode="channelA",        # looks only at CD31 cutoff
-    n_each=8
-)
+    # 2) CD31-positive vs CD31-negative tiles
+    plot_positive_negative_tiles(
+        "sample_15.ome",
+        qA=0.95,
+        qB=0.15,
+        use_quantile=True,
+        mode="channelA",
+        n_each=8
+    )
 
-# 3) Per-channel: F4/80 positives vs negatives
-plot_positive_negative_tiles(
-    '20230721_WT POD 5 6_WT POD 5 7_Scan3_Stitched.ome',
-    qA=0.95, qB=0.15, use_quantile=True,
-    mode="channelB",        # looks only at F4/80 cutoff
-    n_each=8
-)
+    # 3) F4/80-positive vs F4/80-negative tiles
+    plot_positive_negative_tiles(
+        "sample_13.ome",
+        qA=0.95,
+        qB=0.15,
+        use_quantile=True,
+        mode="channelB",
+        n_each=8
+    )
