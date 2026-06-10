@@ -4,13 +4,27 @@
 
 This repository contains scripts for processing and analyzing multiplex imaging datasets. The workflow includes image conversion, tile generation, feature extraction, clustering, dimensionality reduction, and visualization of tissue features.
 
-The toolkit was developed for analysis of multi-channel fluorescence imaging data stored in OME-TIFF and OME-Zarr formats.
+The toolkit was developed for analysis of multiplex fluorescence imaging datasets stored in OME-TIFF and OME-Zarr formats.
+
+---
+
+## Associated Manuscript
+
+This repository accompanies the manuscript:
+
+**Spatially resolved clustering identifies tissue microenvironments in multiplex fluorescence imaging datasets**
+
+BioRxiv (2025)
+
+https://www.biorxiv.org/content/10.1101/2025.08.19.671136v1
+
+If you use this repository in your work, please cite the manuscript above.
 
 ---
 
 ## Main Features
 
-- Convert OME-TIFF images to Zarr format
+- Convert OME-TIFF images to OME-Zarr format
 - Generate tiles from large whole-slide images
 - Extract density and intensity features from tiles
 - Perform clustering analysis
@@ -39,147 +53,51 @@ conda activate clustering_env
 
 ---
 
-## Environment
+## Repository Structure
 
-Create an `environment.yml` file:
-
-```yaml
-name: clustering_env
-
-channels:
-  - conda-forge
-  - defaults
-
-dependencies:
-  - python=3.9
-  - numpy=1.26.4
-  - pandas=1.5.3
-  - matplotlib
-  - seaborn
-  - scikit-learn
-  - umap-learn
-  - zarr
-  - scanpy
-  - anndata
-  - tqdm
-  - pip
-  - pip:
-      - pycirclize
+```text
+Image-Clustering-and-Visualization-Toolkit/
+│
+├── preprocessing/
+│   ├── read_OME_TIFF.py
+│   ├── tiff_to_zarr.py
+│   └── gen_tiles.py
+│
+├── Figure 4/
+├── Figure 5/
+├── Figure 6/
+├── Figure 7/
+│
+├── clustering_certain_clusters.py
+├── clustering_plotting.py
+├── individual_clusters.py
+│
+├── environment.yml
+├── LICENSE
+└── README.md
 ```
 
+The repository is organized according to the figures presented in the manuscript. Scripts used to generate each figure are located in the corresponding figure directory.
+
 ---
 
-## Workflow
+## Example Outputs
 
-### 1. TIFF to Zarr Conversion
-
-OME-TIFF images are converted to Zarr format for efficient storage and access. Channel information is preserved and stored alongside the image data.
-
-**Outputs**
-
-- `data.zarr`
-- Channel metadata files
-
-### 2. Tile Generation
-
-Whole-slide images are divided into smaller tiles for downstream analysis. Tissue-containing regions are identified using thumbnail masks.
-
-**Outputs**
-
-- Tile coordinate files
-- Thumbnail masks
-
-### 3. Feature Extraction
-
-Features are calculated for each tile, including marker density and mean intensity measurements.
-
-**Outputs**
-
-- Feature tables (`.csv`)
-
-### 4. Clustering and Dimensionality Reduction
-
-Tile features can be clustered using K-means and visualized using PCA or UMAP.
-
-**Outputs**
-
-- Cluster assignments
-- PCA plots
-- UMAP embeddings
-
-### 5. Tissue Layer and Supercluster Analysis
-
-Clusters can be grouped into broader tissue categories based on marker expression patterns.
-
-**Outputs**
-
-- Tissue annotations
-- Supercluster assignments
-
-### 6. Visualization
-
-The repository includes scripts for generating:
+The repository contains scripts and visualizations for:
 
 - Cluster maps
-- Tissue overlays
-- Correlation heatmaps
-- UMAP plots
-- Histograms
-- Example tile visualizations
-- Publication figures
-
----
-
-## Input Data
-
-Typical inputs include:
-
-- OME-TIFF images
-- OME-Zarr datasets
-- Tile coordinate files
-- Feature tables (`.csv`)
-
----
-
-## Output Files
-
-Examples of generated outputs include:
-
-- Zarr datasets
-- Feature tables
-- Cluster annotations
+- PCA visualizations
 - UMAP embeddings
-- Correlation plots
-- PNG figures
-- PDF figures
+- Tissue layer and supercluster analysis
+- Marker co-localization analysis
+- Positive and negative tile comparisons
+- Genotype-specific comparisons (WT vs db/db)
+- Publication-quality figures
 
 ---
 
-## Dependencies
+## License
 
-Main packages used in this repository:
+This project is distributed under the GPL-3.0 License.
 
-- NumPy
-- Pandas
-- Matplotlib
-- Seaborn
-- Scikit-learn
-- UMAP-learn
-- Zarr
-- Scanpy
-- AnnData
-
----
-
-## References
-
-- tifffile: https://pypi.org/project/tifffile/
-- Zarr: https://zarr.readthedocs.io/
-- Scikit-learn: https://scikit-learn.org/
-- UMAP: https://umap-learn.readthedocs.io/
-- Scanpy: https://scanpy.readthedocs.io/
-
----
-This work is available as a bioRxiv preprint:
-[![bioRxiv](https://img.shields.io/badge/bioRxiv-2025.08.19.671136v1-B31B1B.svg)](https://www.biorxiv.org/content/10.1101/2025.08.19.671136v1)
-
+See the `LICENSE` file for details.
