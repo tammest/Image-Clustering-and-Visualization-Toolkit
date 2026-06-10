@@ -1,3 +1,4 @@
+import os
 import re
 import numpy as np
 import matplotlib.pyplot as plt
@@ -6,10 +7,10 @@ import matplotlib.pyplot as plt
 GENO_RE = re.compile(r'(?<![A-Za-z0-9])(wt|dbdb)(?![A-Za-z0-9])', re.I)
 
 # colors
-COL_WT  = "#29352e"   # blue
+COL_WT  = "#29352e"   # dark green/gray
 COL_DBD = "#e73737"   # red
 
-def plot_wt_vs_dbdb(sample_names, chA, chB, qA, qB, use_quantile=True, out_dir="geno_comparison_clean"):
+def plot_wt_vs_dbdb(sample_names, chA, chB, qA, qB, use_quantile=True, out_dir="outputs/genotype_comparison"):
     os.makedirs(out_dir, exist_ok=True)
 
     # classify sample names
@@ -74,11 +75,13 @@ def plot_wt_vs_dbdb(sample_names, chA, chB, qA, qB, use_quantile=True, out_dir="
     plt.close(fig)
     print(f"[OK] Saved: {out_png}\n[OK] Saved: {out_pdf}")
 
-plot_wt_vs_dbdb(
-    SAMPLES,         # the list of sample names you already have
-    chA=CH_CD31,     # CD31 channel index
-    chB=CH_F480,     # F4/80 channel index
-    qA=0.95,         # CD31 quantile cutoff
-    qB=0.15,         # F4/80 quantile cutoff
-    use_quantile=True
-)
+if __name__ == "__main__":
+    plot_wt_vs_dbdb(
+        SAMPLES,
+        chA=CH_CD31,
+        chB=CH_F480,
+        qA=0.95,
+        qB=0.15,
+        use_quantile=True,
+        out_dir="outputs/genotype_comparison"
+    )
