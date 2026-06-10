@@ -84,6 +84,6 @@ def gen_tile_positions(slide: zarr, mask: np.ndarray, tile_size: int = 128) -> t
     return tile_img, positions
 
 # Example usage
-output_path = '/gpfs/scratch/tm3475'
-sample_name = '20230513_KPM-PB-20_Scan1T.ome'
+output_path = 'outputs/tiles'
+sample_name = 'Sample_1.ome'
 gen_tiles(output_path, sample_name)
