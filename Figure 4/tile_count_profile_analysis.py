@@ -44,23 +44,23 @@ OUT_PDF = f"{OUT_BASENAME}.pdf"
 OUT_SVG = f"{OUT_BASENAME}.svg"
 
 # Your samples
-SAMPLES = [
-    '20230721_Day 5 dbdb 4_dbdb Day 5 6_Scan6_Stitched.ome',
-    '20230721_Day 5 dbdb 4_dbdb Day 5 6_Scan6_Stitched_B.ome',
-    '20230721_Day 5 WT 3_WT Day 5 4_Scan3_Stitched.ome',
-    '20230721_Day 5 WT 3_WT Day 5 4_Scan3_Stitched_B.ome',
-    '20230721_dbdb POD10 Untr 43 R_dbdb Untr POD10 41L_Scan3_Stitched.ome',
-    '20230721_dbdb POD10 Untr 43 R_dbdb Untr POD10 41L_Scan3_Stitched_B.ome',
-    '20230721_dbdb POD10 Untr B2R_dbdb POD10 Untr B1R_Scan3_Stitched.ome',
-    '20230721_dbdb POD10 Untr B2R_dbdb POD10 Untr B1R_Scan3_Stitched_B.ome',
-    '20230721_dbdb Untr POD5 39R2_dbdb POD5 9_Scan4_Stitched.ome',
-    '20230721_dbdb Untr POD5 39R2_dbdb POD5 9_Scan4_Stitched_B.ome',
-    '20230721_POD 10 WT 1_C57 10d 1_Scan2_Stitched.ome',
-    '20230721_POD 10 WT 1_C57 10d 1_Scan2_Stitched_B.ome',
-    '20230721_WT POD 5 6_WT POD 5 7_Scan3_Stitched.ome',
-    '20230721_WT POD 5 6_WT POD 5 7_Scan3_Stitched_B.ome',
-    '20230721_WT POD10 47_WT POD 10 48_Scan2_Stitched.ome',
-    '20230721_WT POD10 47_WT POD 10 48_Scan2_Stitched_B.ome'
+SAMPLE_NAMES = [
+    'sample_1.ome',
+    'sample_2.ome',
+    'sample_3.ome',
+    'sample_4.ome',
+    'sample_5.ome',
+    'sample_6.ome',
+    'sample_7.ome',
+    'sample_8.ome',
+    'sample_9.ome',
+    'sample_10.ome',
+    'sample_11.ome',
+    'sample_12.ome',
+    'sample_13.ome',
+    'sample_14.ome',
+    'sample_15.ome',
+    'sample_16.ome'
 ]
 
 # =========================
@@ -200,7 +200,7 @@ def percentile_curve(yvals: np.ndarray, n_grid: int = 500) -> Tuple[np.ndarray, 
 # Build metadata
 # =========================
 rows = []
-for s in SAMPLES:
+for s in SAMPLES_NAMES:
     rows.append({
         'sample_name': s,
         'day_group': extract_day_group(s),
@@ -331,7 +331,7 @@ if NORMALIZE_Y: title_bits.append('normalized=TRUE')
 if Y_TRANSFORM != 'none': title_bits.append(f'y-transform={Y_TRANSFORM}')
 if SMOOTH_WINDOW and SMOOTH_WINDOW > 1: title_bits.append(f'smooth={SMOOTH_WINDOW}')
 #ax.set_title(' — '.join(title_bits))
-ax.set_title("Comparative Tile-Level Pixel Count Profiles in Day 5 and Day 10 WT and dbdb Mice", fontsize=13, fontweight='bold')
+ax.set_title("Comparative Tile-Level Pixel Count Profiles Across Cohorts", fontsize=13, fontweight='bold')
 
 
 # Nice ticks & grid
