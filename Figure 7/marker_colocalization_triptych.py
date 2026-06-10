@@ -10,8 +10,9 @@ from matplotlib import transforms as mtransforms  # for arrows below hist axes
 # ================================
 # Paths & data
 # ================================
-ROOT_PATH   = "/gpfs/scratch/tm3475/testforpython"   # contains <sample_name>/data.zarr
-FEATURES_CSV = "features_with_clusters.csv"
+ROOT_PATH = "data/ome_tiffs"
+FEATURES_CSV = "data/features_with_clusters.csv"
+OUT_DIR = "outputs/marker_colocalization_triptychs"
 features     = pd.read_csv(FEATURES_CSV)
 
 # ================================
