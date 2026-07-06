@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+
 
 """
 Publication-ready Elbow (with zooms) & PCA Biplot (legend-only arrows)
