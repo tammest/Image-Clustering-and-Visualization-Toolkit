@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import os, re, glob
 from typing import Optional, Dict, List, Tuple
 
