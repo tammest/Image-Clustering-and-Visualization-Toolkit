@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """
 Tile coverage analysis with:
 - STRICT pre-flight mapping enforcement (no Unknown; require 4 cohorts)
