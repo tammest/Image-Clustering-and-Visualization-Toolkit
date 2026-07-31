@@ -95,7 +95,6 @@ The repository contains scripts for:
 - Marker co-localization analysis
 - Positive and negative tile comparisons
 - Genotype-specific comparisons (WT vs db/db)
-- Publication-quality figure generation
 
 ---
 
