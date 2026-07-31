@@ -1,4 +1,5 @@
-#this code is to those KDE points that we are making for each phenotype so for POD 5 and POD 10 with respective treatment - we also calculate the best grid points (optimization) 
+#this code is to those KDE points that we are making for each phenotype so for POD 5 and POD 10 with respective treatment 
+#- we also calculate the best grid points (optimization) 
 
 
 from pathlib import Path
