@@ -74,6 +74,7 @@ Image-Clustering-and-Visualization-Toolkit/
 ├── Figure 6/
 ├── Figure 7/
 ├── Figure 8/
+├── Figure 9/
 │
 ├── environment.yml
 ├── LICENSE
